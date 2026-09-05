@@ -1,0 +1,51 @@
+{
+  "name": "lingcoo-edu-oms",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A modular native Fastify business application starter with an independent Ant Design Admin.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "scripts": {
+    "predev": "corepack pnpm --filter @lingcoo-edu-oms/contracts build",
+    "dev": "corepack pnpm --parallel --filter @lingcoo-edu-oms/server --filter @lingcoo-edu-oms/admin --filter @lingcoo-edu-oms/web dev",
+    "predev:server": "corepack pnpm --filter @lingcoo-edu-oms/contracts build",
+    "dev:server": "corepack pnpm --filter @lingcoo-edu-oms/server dev",
+    "dev:worker": "corepack pnpm --filter @lingcoo-edu-oms/server dev:worker",
+    "predev:admin": "corepack pnpm --filter @lingcoo-edu-oms/contracts build",
+    "dev:admin": "corepack pnpm --filter @lingcoo-edu-oms/admin dev",
+    "dev:web": "corepack pnpm --filter @lingcoo-edu-oms/web dev",
+    "build": "corepack pnpm -r --if-present run build",
+    "typecheck": "corepack pnpm -r --if-present run typecheck",
+    "test": "corepack pnpm -r --if-present run test",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:toolchain": "node scripts/check-toolchain.mjs",
+    "check:boundaries": "node scripts/check-module-boundaries.mjs",
+    "check": "corepack pnpm check:toolchain && corepack pnpm check:boundaries && corepack pnpm smoke:module-generator && corepack pnpm format:check && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test && corepack pnpm build && corepack pnpm smoke:admin-static",
+    "generate:module": "node scripts/generate-module.mjs",
+    "smoke:module-generator": "node scripts/verify-module-generator.mjs",
+    "smoke:admin-static": "node scripts/verify-admin-static.mjs",
+    "smoke:docker": "node scripts/verify-docker-smoke.mjs",
+    "e2e": "playwright test",
+    "db:generate": "corepack pnpm --filter @lingcoo-edu-oms/server db:generate",
+    "db:migrate": "corepack pnpm --filter @lingcoo-edu-oms/server db:migrate",
+    "db:bootstrap": "corepack pnpm --filter @lingcoo-edu-oms/server db:bootstrap",
+    "db:studio": "corepack pnpm --filter @lingcoo-edu-oms/server db:studio",
+    "start": "corepack pnpm --filter @lingcoo-edu-oms/server start:prod",
+    "start:worker": "corepack pnpm --filter @lingcoo-edu-oms/server start:worker"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.5.2",
+    "eslint": "10.8.1",
+    "globals": "17.11.0",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.67.0"
+  }
+}

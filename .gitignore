@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+*.tsbuildinfo
+.pnpm-store/
+playwright-report/
+test-results/
+/create-ts-fastify-business-starter/template.tar.gz
+/create-ts-fastify-business-starter/LICENSE

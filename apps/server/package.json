@@ -1,0 +1,58 @@
+{
+  "name": "@lingcoo-edu-oms/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/entrypoints/api.js",
+  "files": [
+    "dist",
+    "drizzle"
+  ],
+  "scripts": {
+    "dev": "tsx watch src/entrypoints/api.ts",
+    "dev:worker": "tsx watch src/entrypoints/worker.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start:prod": "node dist/entrypoints/api.js",
+    "start:worker": "node dist/entrypoints/worker.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "tsx src/entrypoints/migrate.ts",
+    "predb:bootstrap": "corepack pnpm --filter @lingcoo-edu-oms/contracts build",
+    "db:bootstrap": "tsx src/entrypoints/bootstrap.ts",
+    "db:studio": "drizzle-kit studio --config drizzle.config.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1117.0",
+    "@aws-sdk/s3-request-presigner": "3.1117.0",
+    "@fastify/cookie": "11.1.2",
+    "@fastify/cors": "11.3.0",
+    "@fastify/helmet": "13.1.1",
+    "@fastify/multipart": "10.1.1",
+    "@fastify/rate-limit": "11.2.0",
+    "@fastify/static": "10.1.3",
+    "@fastify/swagger": "9.8.1",
+    "@fastify/swagger-ui": "6.1.1",
+    "@lingcoo-tech/crypto": "0.1.1",
+    "@lingcoo-tech/http": "0.1.1",
+    "@lingcoo-tech/security": "0.1.1",
+    "@lingcoo-edu-oms/contracts": "workspace:*",
+    "dotenv": "17.4.2",
+    "drizzle-orm": "0.45.2",
+    "fastify": "5.12.1",
+    "file-type": "22.0.2",
+    "nodemailer": "9.0.5",
+    "pg": "8.23.0",
+    "pino": "10.3.1",
+    "zod": "4.5.2"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "8.0.1",
+    "@types/pg": "8.21.0",
+    "drizzle-kit": "0.31.10",
+    "tsx": "4.23.12",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}

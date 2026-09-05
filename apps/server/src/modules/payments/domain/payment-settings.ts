@@ -1,0 +1,57 @@
+import { z } from 'zod';
+
+import type { SettingDefinition } from '../../settings/public.js';
+
+export const PAYMENT_SETTINGS: SettingDefinition[] = [
+  {
+    key: 'payments.provider',
+    group: 'payments',
+    groupLabel: '支付服务',
+    groupOrder: 70,
+    label: '默认支付 Provider',
+    description: 'Starter 默认提供可测试的 Mock Provider。',
+    kind: 'internal',
+    schema: z.enum(['mock']),
+    defaultValue: 'mock',
+    control: 'select',
+    options: [{ label: 'Mock', value: 'mock' }],
+  },
+  {
+    key: 'payments.mock.app-id',
+    group: 'payments',
+    groupLabel: '支付服务',
+    groupOrder: 70,
+    label: 'Mock App ID',
+    description: '回调校验使用的应用标识。',
+    kind: 'internal',
+    schema: z.string().trim().min(1).max(200),
+    environment: 'PAYMENTS_MOCK_APP_ID',
+    defaultValue: 'mock-app',
+    control: 'text',
+  },
+  {
+    key: 'payments.mock.merchant-id',
+    group: 'payments',
+    groupLabel: '支付服务',
+    groupOrder: 70,
+    label: 'Mock 商户 ID',
+    description: '回调校验使用的商户标识。',
+    kind: 'internal',
+    schema: z.string().trim().min(1).max(200),
+    environment: 'PAYMENTS_MOCK_MERCHANT_ID',
+    defaultValue: 'mock-merchant',
+    control: 'text',
+  },
+  {
+    key: 'payments.mock.signing-secret',
+    group: 'payments',
+    groupLabel: '支付服务',
+    groupOrder: 70,
+    label: 'Mock 回调签名密钥',
+    description: 'HMAC-SHA256 回调密钥；接口与浏览器永不回显。',
+    kind: 'secret',
+    schema: z.string().min(32).max(500),
+    environment: 'PAYMENTS_MOCK_SIGNING_SECRET',
+    control: 'text',
+  },
+];

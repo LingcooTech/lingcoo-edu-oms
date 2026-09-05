@@ -1,0 +1,1 @@
+-- Empty baseline. Business modules own future schema changes.

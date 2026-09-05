@@ -1,0 +1,14 @@
+packages:
+  - apps/*
+  - packages/*
+
+injectWorkspacePackages: true
+
+allowBuilds:
+  esbuild: true
+
+overrides:
+  '@aws-sdk/credential-provider-node': 3.972.81
+
+minimumReleaseAgeExclude:
+  - zod@4.5.2

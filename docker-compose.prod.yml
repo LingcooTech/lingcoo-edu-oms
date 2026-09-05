@@ -1,0 +1,147 @@
+x-runtime-environment: &runtime-environment
+  NODE_ENV: production
+  APP_NAME: ${APP_NAME:-lingcoo-edu-oms}
+  APP_VERSION: ${APP_VERSION:-development}
+  APP_PUBLIC_URL: ${APP_PUBLIC_URL:?APP_PUBLIC_URL is required}
+  API_HOST: 0.0.0.0
+  API_PORT: 8090
+  CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+  API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}
+  TRUST_PROXY: 'true'
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  JOBS_POLL_INTERVAL_MS: ${JOBS_POLL_INTERVAL_MS:-1000}
+  JOBS_CONCURRENCY: ${JOBS_CONCURRENCY:-5}
+  JOBS_HEARTBEAT_INTERVAL_MS: ${JOBS_HEARTBEAT_INTERVAL_MS:-10000}
+  JOBS_SHUTDOWN_GRACE_MS: ${JOBS_SHUTDOWN_GRACE_MS:-30000}
+  JOBS_STALE_RECOVERY_BATCH: ${JOBS_STALE_RECOVERY_BATCH:-100}
+  JOBS_RETENTION_DAYS: ${JOBS_RETENTION_DAYS:-30}
+  JOBS_MAINTENANCE_INTERVAL_MS: ${JOBS_MAINTENANCE_INTERVAL_MS:-3600000}
+  OUTBOX_POLL_INTERVAL_MS: ${OUTBOX_POLL_INTERVAL_MS:-1000}
+  OUTBOX_CONCURRENCY: ${OUTBOX_CONCURRENCY:-5}
+  OUTBOX_HEARTBEAT_INTERVAL_MS: ${OUTBOX_HEARTBEAT_INTERVAL_MS:-10000}
+  OUTBOX_SHUTDOWN_GRACE_MS: ${OUTBOX_SHUTDOWN_GRACE_MS:-30000}
+  OUTBOX_STALE_RECOVERY_BATCH: ${OUTBOX_STALE_RECOVERY_BATCH:-100}
+  OUTBOX_RETENTION_DAYS: ${OUTBOX_RETENTION_DAYS:-30}
+  OUTBOX_MAINTENANCE_INTERVAL_MS: ${OUTBOX_MAINTENANCE_INTERVAL_MS:-3600000}
+  AUTH_SESSION_TTL_SECONDS: ${AUTH_SESSION_TTL_SECONDS:-604800}
+  AUTH_ACTION_TOKEN_TTL_SECONDS: ${AUTH_ACTION_TOKEN_TTL_SECONDS:-3600}
+  AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-app_session}
+  AUTH_CSRF_COOKIE_NAME: ${AUTH_CSRF_COOKIE_NAME:-app_csrf}
+  AUTH_COOKIE_SAME_SITE: ${AUTH_COOKIE_SAME_SITE:-lax}
+  AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+  AUTH_EXPOSE_TEST_TOKENS: 'false'
+  SETTINGS_ENCRYPTION_CURRENT_KEY_ID: ${SETTINGS_ENCRYPTION_CURRENT_KEY_ID:?SETTINGS_ENCRYPTION_CURRENT_KEY_ID is required}
+  SETTINGS_ENCRYPTION_KEYS: ${SETTINGS_ENCRYPTION_KEYS:?SETTINGS_ENCRYPTION_KEYS is required}
+  SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
+  MAIL_TRANSPORT: ${MAIL_TRANSPORT:-capture}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-}
+  SMTP_SECURE: ${SMTP_SECURE:-}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM_ADDRESS: ${SMTP_FROM_ADDRESS:-}
+  SMTP_FROM_NAME: ${SMTP_FROM_NAME:-}
+  MAIL_RETENTION_DAYS: ${MAIL_RETENTION_DAYS:-30}
+  MAIL_MAINTENANCE_INTERVAL_MS: ${MAIL_MAINTENANCE_INTERVAL_MS:-3600000}
+  STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+  STORAGE_LOCAL_ROOT: ${STORAGE_LOCAL_ROOT:-/app/data/storage}
+  STORAGE_MAX_UPLOAD_BYTES: ${STORAGE_MAX_UPLOAD_BYTES:-26214400}
+  STORAGE_UPLOAD_EXPIRY_SECONDS: ${STORAGE_UPLOAD_EXPIRY_SECONDS:-900}
+  STORAGE_PENDING_RETENTION_HOURS: ${STORAGE_PENDING_RETENTION_HOURS:-24}
+  STORAGE_MAINTENANCE_INTERVAL_MS: ${STORAGE_MAINTENANCE_INTERVAL_MS:-3600000}
+  STORAGE_S3_REGION: ${STORAGE_S3_REGION:-}
+  STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT:-}
+  STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET:-}
+  STORAGE_S3_ACCESS_KEY: ${STORAGE_S3_ACCESS_KEY:-}
+  STORAGE_S3_SECRET_KEY: ${STORAGE_S3_SECRET_KEY:-}
+  STORAGE_S3_FORCE_PATH_STYLE: ${STORAGE_S3_FORCE_PATH_STYLE:-}
+  BOOTSTRAP_OWNER_EMAIL: ${BOOTSTRAP_OWNER_EMAIL:-}
+  BOOTSTRAP_OWNER_PASSWORD: ${BOOTSTRAP_OWNER_PASSWORD:-}
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  api:
+    image: ${APP_IMAGE:?APP_IMAGE is required}
+    environment: *runtime-environment
+    command: ['node', 'apps/server/dist/entrypoints/api.js']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - '8090'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8090/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 4s
+      retries: 10
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - storage_data:/app/data/storage
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+  worker:
+    image: ${APP_IMAGE:?APP_IMAGE is required}
+    environment: *runtime-environment
+    command: ['node', 'apps/server/dist/entrypoints/worker.js']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - storage_data:/app/data/storage
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
+    environment:
+      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:?CADDY_SITE_ADDRESS is required}
+    ports:
+      - '${HTTP_PORT:?HTTP_PORT is required}:80'
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  storage_data:
+  caddy_data:
+  caddy_config:
