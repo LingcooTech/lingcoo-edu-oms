@@ -32,7 +32,7 @@ function resolveInstitution(contract, courseById) {
   return contract.institutionId ?? courseById.get(contract.courseId)?.providerInstitutionId ?? null;
 }
 
-function validateLegacyMovements(contract, movements, incomplete, exceptions) {
+function validateLegacyMovements(contract, movements, incomplete) {
   if (!movements.length) {
     if (contract.remainingLessonCount > 0) {
       incomplete.push(issue('LEGACY_LEDGER_EVIDENCE_MISSING', 'courseContract', contract.id));
@@ -136,7 +136,6 @@ export function planLessonMigration(source, target = {}) {
       contract,
       movementsByContract.get(contract.id) ?? [],
       incomplete,
-      exceptions,
     );
     if (!ledgerIsValid) continue;
     if (coursePackage) {

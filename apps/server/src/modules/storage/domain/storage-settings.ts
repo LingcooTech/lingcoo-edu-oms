@@ -44,7 +44,8 @@ export const STORAGE_SETTINGS: SettingDefinition[] = [
     groupLabel: '文件存储',
     groupOrder: 50,
     label: 'S3 Endpoint（端点）',
-    description: '七牛 Kodo 请填写对应区域的 S3 Endpoint，例如 https://s3.cn-east-1.qiniucs.com；AWS S3 可留空。',
+    description:
+      '七牛 Kodo 请填写对应区域的 S3 Endpoint，例如 https://s3.cn-east-1.qiniucs.com；AWS S3 可留空。',
     kind: 'internal',
     schema: z.url().max(1_000),
     environment: 'STORAGE_S3_ENDPOINT',
@@ -92,7 +93,8 @@ export const STORAGE_SETTINGS: SettingDefinition[] = [
     groupLabel: '文件存储',
     groupOrder: 50,
     label: '强制 Path-style（路径寻址）',
-    description: '七牛 Kodo S3 通常可关闭并使用虚拟主机寻址；若端点、证书或代理要求路径寻址再开启。',
+    description:
+      '七牛 Kodo S3 通常可关闭并使用虚拟主机寻址；若端点、证书或代理要求路径寻址再开启。',
     kind: 'internal',
     schema: booleanSettingSchema,
     environment: 'STORAGE_S3_FORCE_PATH_STYLE',

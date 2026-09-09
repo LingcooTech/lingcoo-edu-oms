@@ -216,6 +216,8 @@ export function AppRouter() {
                 path="settings"
                 element={
                   <SettingsPage
+                    title="接口配置"
+                    description="配置邮件、文件存储、微信支付和内容来源；敏感凭据统一加密保存。"
                     includedGroups={[
                       'application',
                       'mail',

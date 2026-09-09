@@ -6,7 +6,8 @@ import { S3StorageProvider } from '../src/modules/storage/infrastructure/s3-stor
 
 describe('S3 storage provider project configuration', () => {
   it('passes Qiniu Kodo S3 endpoint, region, credentials, and path style to the S3 client factory', async () => {
-    const send = vi.fn(async (_command: unknown, _options?: unknown) => ({}));
+    const send = vi.fn();
+    send.mockResolvedValue({});
     let receivedConfiguration: unknown;
     const provider = new S3StorageProvider(
       async () => ({
@@ -52,7 +53,7 @@ describe('S3 storage provider project configuration', () => {
       {
         client: ({ forcePathStyle }) => {
           receivedForcePathStyle = forcePathStyle;
-          return { send: vi.fn(async () => ({})) } as unknown as S3Client;
+          return { send: vi.fn().mockResolvedValue({}) } as unknown as S3Client;
         },
       },
     );

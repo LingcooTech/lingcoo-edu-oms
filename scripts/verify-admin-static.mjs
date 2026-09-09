@@ -1,10 +1,29 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-const port = 18_091;
+
+async function findAvailablePort() {
+  const probe = createServer();
+  await new Promise((resolvePromise, reject) => {
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', resolvePromise);
+  });
+  const address = probe.address();
+  if (!address || typeof address === 'string') {
+    probe.close();
+    throw new Error('Could not allocate a local port for the Admin static smoke test');
+  }
+  await new Promise((resolvePromise, reject) => {
+    probe.close((error) => (error ? reject(error) : resolvePromise()));
+  });
+  return address.port;
+}
+
+const port = await findAvailablePort();
 const origin = `http://127.0.0.1:${port}`;
 let output = '';
 const child = spawn(process.execPath, ['apps/server/dist/entrypoints/api.js'], {
@@ -73,8 +92,11 @@ try {
   const scriptPath = html.match(/src="([^"]+\.js)"/)?.[1];
   if (!scriptPath) throw new Error('Admin entry script was not found');
   const script = await fetch(`${origin}${scriptPath}`);
-  if (!script.ok || !script.headers.get('content-type')?.includes('javascript')) {
-    throw new Error(`Admin asset was not served correctly (${script.status})`);
+  const scriptContentType = script.headers.get('content-type');
+  if (!script.ok || !scriptContentType?.includes('javascript')) {
+    throw new Error(
+      `Admin asset was not served correctly (${script.status}, ${scriptContentType ?? 'no content type'}, ${scriptPath})`,
+    );
   }
   await script.arrayBuffer();
 

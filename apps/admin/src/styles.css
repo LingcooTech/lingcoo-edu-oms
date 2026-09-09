@@ -1443,6 +1443,11 @@ body {
   gap: 12px;
 }
 
+.setting-secret-textarea {
+  font-family: monospace;
+  -webkit-text-security: disc;
+}
+
 .settings-tests {
   display: grid;
   gap: 12px;

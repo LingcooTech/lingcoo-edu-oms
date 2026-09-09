@@ -246,6 +246,19 @@ function SettingControl({
   onChange(value: unknown): void;
 }) {
   if (setting.kind === 'secret') {
+    if (setting.control === 'textarea') {
+      return (
+        <Input.TextArea
+          value={typeof value === 'string' ? value : ''}
+          disabled={disabled}
+          autoComplete="new-password"
+          autoSize={{ minRows: 4, maxRows: 10 }}
+          placeholder={setting.configured ? '已配置；粘贴完整新值以替换' : '粘贴完整 PEM 内容'}
+          className="setting-secret-textarea"
+          onChange={(event) => onChange(event.target.value)}
+        />
+      );
+    }
     return (
       <Input.Password
         value={typeof value === 'string' ? value : ''}
@@ -276,6 +289,16 @@ function SettingControl({
         disabled={disabled}
         options={setting.options}
         onChange={onChange}
+      />
+    );
+  }
+  if (setting.control === 'textarea') {
+    return (
+      <Input.TextArea
+        value={typeof value === 'string' ? value : ''}
+        disabled={disabled}
+        autoSize={{ minRows: 3, maxRows: 10 }}
+        onChange={(event) => onChange(event.target.value)}
       />
     );
   }

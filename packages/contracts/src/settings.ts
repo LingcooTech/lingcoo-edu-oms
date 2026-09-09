@@ -9,7 +9,15 @@ export const settingKeySchema = z
   .max(120);
 export const settingKindSchema = z.enum(['public', 'internal', 'secret']);
 export const settingSourceSchema = z.enum(['environment', 'database', 'default', 'unset']);
-export const settingControlSchema = z.enum(['text', 'email', 'url', 'number', 'boolean', 'select']);
+export const settingControlSchema = z.enum([
+  'text',
+  'textarea',
+  'email',
+  'url',
+  'number',
+  'boolean',
+  'select',
+]);
 
 export const settingOptionSchema = z.object({
   label: z.string().trim().min(1).max(120),

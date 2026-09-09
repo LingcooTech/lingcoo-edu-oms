@@ -39,9 +39,11 @@ import {
 } from './storage/public.js';
 import { createBrandingModule, createBrandingService } from './branding/public.js';
 import {
+  createWechatPayConnectionTester,
   createPaymentsModule,
   createPaymentsService,
   PAYMENT_SETTINGS,
+  WECHAT_PAY_SETTINGS,
 } from './payments/public.js';
 import { createOrganizationModule, createOrganizationService } from './organization/public.js';
 import { createPeopleModule, createPeopleService } from './people/public.js';
@@ -62,6 +64,16 @@ import {
   createTeachingResourcesModule,
   createTeachingResourcesService,
 } from './teaching-resources/public.js';
+import {
+  createWechatMiniProgramConnectionTester,
+  createWechatMiniProgramService,
+  WECHAT_MINI_PROGRAM_SETTINGS,
+} from './wechat-mini-program/public.js';
+import {
+  CONTENT_SOURCE_SETTINGS,
+  createContentSourcesService,
+  createNotionConnectionTester,
+} from './content-sources/public.js';
 
 export interface ApplicationModuleDependencies {
   environment: AppEnvironment;
@@ -77,6 +89,9 @@ export async function registerApplicationModules(
   for (const definition of MAIL_SETTINGS) settingsRegistry.register(definition);
   for (const definition of STORAGE_SETTINGS) settingsRegistry.register(definition);
   for (const definition of PAYMENT_SETTINGS) settingsRegistry.register(definition);
+  for (const definition of WECHAT_PAY_SETTINGS) settingsRegistry.register(definition);
+  for (const definition of WECHAT_MINI_PROGRAM_SETTINGS) settingsRegistry.register(definition);
+  for (const definition of CONTENT_SOURCE_SETTINGS) settingsRegistry.register(definition);
   const settings = createSettingsService({ ...dependencies, audit, registry: settingsRegistry });
   const idempotency = createIdempotencyService(dependencies);
   const jobs = createJobsService({
@@ -126,12 +141,19 @@ export async function registerApplicationModules(
     settings: settings.service,
     audit,
   });
+  const wechatMiniProgram = createWechatMiniProgramService({ settings: settings.service });
+  const contentSources = createContentSourcesService({ settings: settings.service });
   jobs.registry.register(storage.maintenance.deleteObjectJobHandler);
   jobs.registry.register(storage.maintenance.deleteRejectedObjectJobHandler);
   jobs.registry.register(storage.maintenance.cleanupPendingJobHandler);
   jobs.recurring.register(storage.maintenance.recurringJob);
   settings.registry.registerConnectionTester(createSmtpConnectionTester(settings.service));
   settings.registry.registerConnectionTester(createStorageConnectionTester(storage.providers));
+  settings.registry.registerConnectionTester(
+    createWechatMiniProgramConnectionTester(wechatMiniProgram),
+  );
+  settings.registry.registerConnectionTester(createWechatPayConnectionTester(settings.service));
+  settings.registry.registerConnectionTester(createNotionConnectionTester(contentSources));
   const organization = createOrganizationService({ database: dependencies.database, audit });
   const lessonAccountProvisioner = createLessonAccountProvisioner({
     database: dependencies.database,

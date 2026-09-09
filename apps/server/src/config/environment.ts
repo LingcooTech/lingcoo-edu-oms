@@ -148,6 +148,53 @@ export const environmentSchema = z
     PAYMENTS_MOCK_APP_ID: optionalEnvironmentValue(z.string().trim().min(1).max(200)),
     PAYMENTS_MOCK_MERCHANT_ID: optionalEnvironmentValue(z.string().trim().min(1).max(200)),
     PAYMENTS_MOCK_SIGNING_SECRET: optionalEnvironmentValue(z.string().min(32).max(500)),
+    WECHAT_MINI_PROGRAM_ENABLED: optionalEnvironmentValue(
+      z.enum(['true', 'false']).transform((value) => value === 'true'),
+    ),
+    WECHAT_MINI_PROGRAM_APP_ID: optionalEnvironmentValue(
+      z
+        .string()
+        .trim()
+        .regex(/^wx[0-9a-fA-F]{16}$/),
+    ),
+    WECHAT_MINI_PROGRAM_APP_SECRET: optionalEnvironmentValue(z.string().trim().min(16).max(200)),
+    WECHAT_MINI_PROGRAM_STATE: optionalEnvironmentValue(z.enum(['developer', 'trial', 'formal'])),
+    WECHAT_MINI_PROGRAM_SESSION_REMINDER_TEMPLATE_ID: optionalEnvironmentValue(
+      z.string().trim().min(1).max(200),
+    ),
+    WECHAT_MINI_PROGRAM_LESSON_CONSUMPTION_TEMPLATE_ID: optionalEnvironmentValue(
+      z.string().trim().min(1).max(200),
+    ),
+    WECHAT_PAY_ENABLED: optionalEnvironmentValue(
+      z.enum(['true', 'false']).transform((value) => value === 'true'),
+    ),
+    WECHAT_PAY_APP_ID: optionalEnvironmentValue(
+      z
+        .string()
+        .trim()
+        .regex(/^wx[0-9a-fA-F]{16}$/),
+    ),
+    WECHAT_PAY_MERCHANT_ID: optionalEnvironmentValue(
+      z
+        .string()
+        .trim()
+        .regex(/^\d{6,32}$/),
+    ),
+    WECHAT_PAY_MERCHANT_SERIAL_NUMBER: optionalEnvironmentValue(z.string().trim().min(8).max(128)),
+    WECHAT_PAY_MERCHANT_PRIVATE_KEY: optionalEnvironmentValue(
+      z.string().trim().min(100).max(20_000),
+    ),
+    WECHAT_PAY_API_V3_KEY: optionalEnvironmentValue(z.string().length(32)),
+    WECHAT_PAY_PUBLIC_KEY_ID: optionalEnvironmentValue(z.string().trim().min(8).max(128)),
+    WECHAT_PAY_PUBLIC_KEY: optionalEnvironmentValue(z.string().trim().min(100).max(20_000)),
+    WECHAT_PAY_NOTIFY_URL: optionalEnvironmentValue(
+      z.url().refine((value) => value.startsWith('https://')),
+    ),
+    NOTION_CONTENT_SOURCE_ENABLED: optionalEnvironmentValue(
+      z.enum(['true', 'false']).transform((value) => value === 'true'),
+    ),
+    NOTION_API_TOKEN: optionalEnvironmentValue(z.string().trim().min(10).max(1_000)),
+    NOTION_API_VERSION: optionalEnvironmentValue(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
     MAIL_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
     MAIL_MAINTENANCE_INTERVAL_MS: z.coerce
       .number()
