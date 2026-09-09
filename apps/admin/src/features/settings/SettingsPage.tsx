@@ -43,20 +43,42 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '操作失败，请稍后重试';
 }
 
-export function SettingsPage() {
+export interface SettingsPageProps {
+  includedGroups?: readonly string[];
+  title?: string;
+  description?: string;
+}
+
+export function SettingsPage({
+  includedGroups,
+  title = '系统设置',
+  description = '集中管理应用级运行参数。环境变量始终优先且只能在部署环境中修改。',
+}: SettingsPageProps) {
   const { message, modal } = App.useApp();
   const settings = useSettings();
   const rotate = useRotateSettingSecrets();
   const canManage = useCan('settings.manage');
+  const includedGroupSet = useMemo(
+    () => (includedGroups ? new Set(includedGroups) : undefined),
+    [includedGroups],
+  );
   const groups = useMemo(() => {
     const result = new Map<string, { label: string; items: SettingView[] }>();
     for (const item of settings.data?.items ?? []) {
+      if (includedGroupSet && !includedGroupSet.has(item.group)) continue;
       const group = result.get(item.group) ?? { label: item.groupLabel, items: [] };
       group.items.push(item);
       result.set(item.group, group);
     }
     return [...result.entries()];
-  }, [settings.data?.items]);
+  }, [includedGroupSet, settings.data?.items]);
+  const connectionTests = useMemo(
+    () =>
+      (settings.data?.connectionTests ?? []).filter(
+        (item) => !includedGroupSet || includedGroupSet.has(item.group),
+      ),
+    [includedGroupSet, settings.data?.connectionTests],
+  );
 
   const confirmRotation = () => {
     modal.confirm({
@@ -76,8 +98,8 @@ export function SettingsPage() {
 
   return (
     <PageContainer
-      title="系统设置"
-      description="集中管理应用级运行参数。环境变量始终优先且只能在部署环境中修改。"
+      title={title}
+      description={description}
       actions={
         canManage ? (
           <Button icon={<KeyOutlined />} loading={rotate.isPending} onClick={confirmRotation}>
@@ -93,11 +115,7 @@ export function SettingsPage() {
         description="敏感设置的明文不会通过管理 API 返回；修改时必须重新输入完整值。"
         style={{ marginBottom: 16 }}
       />
-      <AsyncState
-        loading={settings.isPending}
-        error={settings.error}
-        empty={settings.data?.items.length === 0}
-      >
+      <AsyncState loading={settings.isPending} error={settings.error} empty={groups.length === 0}>
         <div className="settings-groups">
           {groups.map(([key, group]) => (
             <Card
@@ -116,8 +134,8 @@ export function SettingsPage() {
               </div>
             </Card>
           ))}
-          {(settings.data?.connectionTests.length ?? 0) > 0 && (
-            <ConnectionTests items={settings.data?.connectionTests ?? []} canManage={canManage} />
+          {connectionTests.length > 0 && (
+            <ConnectionTests items={connectionTests} canManage={canManage} />
           )}
         </div>
       </AsyncState>

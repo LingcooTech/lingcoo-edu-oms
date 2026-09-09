@@ -212,7 +212,30 @@ export function AppRouter() {
               <Route path="audit" element={<AuditPage />} />
             </Route>
             <Route element={<RequirePermission permissions={['settings.read']} />}>
-              <Route path="settings" element={<SettingsPage />} />
+              <Route
+                path="settings"
+                element={
+                  <SettingsPage
+                    includedGroups={[
+                      'application',
+                      'mail',
+                      'storage',
+                      'wechat-pay',
+                      'content-sources',
+                    ]}
+                  />
+                }
+              />
+              <Route
+                path="mini-program-settings"
+                element={
+                  <SettingsPage
+                    title="小程序设置"
+                    description="集中管理微信小程序接入参数。敏感设置的明文不会通过管理 API 返回。"
+                    includedGroups={['wechat-mini-program']}
+                  />
+                }
+              />
             </Route>
             <Route element={<RequirePermission permissions={['idempotency.read']} />}>
               <Route path="idempotency" element={<IdempotencyPage />} />
