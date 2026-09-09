@@ -34,9 +34,18 @@ export class BrandingService {
     return {
       appName: view.appName,
       primaryColor: view.primaryColor,
+      secondaryColor: view.secondaryColor,
+      backgroundColor: view.backgroundColor,
+      cardColor: view.cardColor,
+      textColor: view.textColor,
+      headingFont: view.headingFont,
+      bodyFont: view.bodyFont,
+      borderRadius: view.borderRadius,
       loginTitle: view.loginTitle,
       loginSubtitle: view.loginSubtitle,
       logoUrl: view.logoUrl,
+      squareLogoUrl: view.squareLogoUrl,
+      darkLogoUrl: view.darkLogoUrl,
       faviconUrl: view.faviconUrl,
       revision: view.revision,
     };
@@ -56,41 +65,40 @@ export class BrandingService {
         const currentRevision = current?.revision ?? 0;
         if (currentRevision !== input.expectedRevision) this.versionConflict();
 
-        const beforeLogo = await this.references.get(
+        const referenceFields = Object.values(APPLICATION_BRANDING_REFERENCE.fields);
+        const beforeAssets = await this.references.getMany(
           APPLICATION_BRANDING_REFERENCE.ownerType,
           APPLICATION_BRANDING_REFERENCE.ownerId,
-          APPLICATION_BRANDING_REFERENCE.fields.logo,
+          referenceFields,
           transaction,
         );
-        const beforeFavicon = await this.references.get(
-          APPLICATION_BRANDING_REFERENCE.ownerType,
-          APPLICATION_BRANDING_REFERENCE.ownerId,
-          APPLICATION_BRANDING_REFERENCE.fields.favicon,
-          transaction,
-        );
-
-        await this.references.set(
-          {
-            ownerType: APPLICATION_BRANDING_REFERENCE.ownerType,
-            ownerId: APPLICATION_BRANDING_REFERENCE.ownerId,
-            field: APPLICATION_BRANDING_REFERENCE.fields.logo,
-            assetId: input.logoAssetId,
-            createdBy: context.actorId,
-          },
-          transaction,
-          { mediaKind: 'image' },
-        );
-        await this.references.set(
-          {
-            ownerType: APPLICATION_BRANDING_REFERENCE.ownerType,
-            ownerId: APPLICATION_BRANDING_REFERENCE.ownerId,
-            field: APPLICATION_BRANDING_REFERENCE.fields.favicon,
-            assetId: input.faviconAssetId,
-            createdBy: context.actorId,
-          },
-          transaction,
-          { mediaKind: 'image' },
-        );
+        const assetInputs = [
+          [APPLICATION_BRANDING_REFERENCE.fields.logo, input.logoAssetId, 'logoAssetId'],
+          [
+            APPLICATION_BRANDING_REFERENCE.fields.squareLogo,
+            input.squareLogoAssetId,
+            'squareLogoAssetId',
+          ],
+          [
+            APPLICATION_BRANDING_REFERENCE.fields.darkLogo,
+            input.darkLogoAssetId,
+            'darkLogoAssetId',
+          ],
+          [APPLICATION_BRANDING_REFERENCE.fields.favicon, input.faviconAssetId, 'faviconAssetId'],
+        ] as const;
+        for (const [field, assetId] of assetInputs) {
+          await this.references.set(
+            {
+              ownerType: APPLICATION_BRANDING_REFERENCE.ownerType,
+              ownerId: APPLICATION_BRANDING_REFERENCE.ownerId,
+              field,
+              assetId,
+              createdBy: context.actorId,
+            },
+            transaction,
+            { mediaKind: 'image' },
+          );
+        }
 
         const now = new Date();
         const saved = current
@@ -99,6 +107,13 @@ export class BrandingService {
               {
                 appName: input.appName,
                 primaryColor: input.primaryColor,
+                secondaryColor: input.secondaryColor,
+                backgroundColor: input.backgroundColor,
+                cardColor: input.cardColor,
+                textColor: input.textColor,
+                headingFont: input.headingFont,
+                bodyFont: input.bodyFont,
+                borderRadius: input.borderRadius,
                 loginTitle: input.loginTitle,
                 loginSubtitle: input.loginSubtitle,
                 updatedBy: context.actorId,
@@ -110,6 +125,13 @@ export class BrandingService {
               {
                 appName: input.appName,
                 primaryColor: input.primaryColor,
+                secondaryColor: input.secondaryColor,
+                backgroundColor: input.backgroundColor,
+                cardColor: input.cardColor,
+                textColor: input.textColor,
+                headingFont: input.headingFont,
+                bodyFont: input.bodyFont,
+                borderRadius: input.borderRadius,
                 loginTitle: input.loginTitle,
                 loginSubtitle: input.loginSubtitle,
                 updatedBy: context.actorId,
@@ -139,6 +161,21 @@ export class BrandingService {
                 before: current?.primaryColor ?? defaults.primaryColor,
                 after: input.primaryColor,
               },
+              ...(
+                [
+                  'secondaryColor',
+                  'backgroundColor',
+                  'cardColor',
+                  'textColor',
+                  'headingFont',
+                  'bodyFont',
+                  'borderRadius',
+                ] as const
+              ).map((field) => ({
+                field,
+                before: current?.[field] ?? defaults[field],
+                after: input[field],
+              })),
               {
                 field: 'loginTitle',
                 before: current?.loginTitle ?? defaults.loginTitle,
@@ -149,8 +186,11 @@ export class BrandingService {
                 before: current?.loginSubtitle ?? defaults.loginSubtitle,
                 after: input.loginSubtitle,
               },
-              { field: 'logoAssetId', before: beforeLogo, after: input.logoAssetId },
-              { field: 'faviconAssetId', before: beforeFavicon, after: input.faviconAssetId },
+              ...assetInputs.map(([field, assetId, auditField]) => ({
+                field: auditField,
+                before: beforeAssets[field] ?? null,
+                after: assetId,
+              })),
             ],
           },
           transaction,
@@ -165,7 +205,7 @@ export class BrandingService {
 
   async assetContent(kind: BrandingAssetKind): Promise<ReadableAsset> {
     const configuration = await this.configuration();
-    const assetId = kind === 'logo' ? configuration?.logoAssetId : configuration?.faviconAssetId;
+    const assetId = configuration?.assetIds[kind] ?? null;
     if (!assetId) throw new ApiError(404, 'BRANDING_ASSET_NOT_FOUND', '品牌素材不存在');
     const content = await this.library.content(assetId, false);
     if (!content.contentType.startsWith('image/')) {
@@ -177,18 +217,31 @@ export class BrandingService {
   private async view(): Promise<BrandingConfiguration> {
     const configuration = await this.configuration();
     const defaults = this.defaults();
-    const [logo, favicon] = await Promise.all([
+    const [logo, squareLogo, darkLogo, favicon] = await Promise.all([
       this.assetView(configuration?.logoAssetId ?? null, 'logo'),
+      this.assetView(configuration?.squareLogoAssetId ?? null, 'squareLogo'),
+      this.assetView(configuration?.darkLogoAssetId ?? null, 'darkLogo'),
       this.assetView(configuration?.faviconAssetId ?? null, 'favicon'),
     ]);
     return {
       appName: configuration?.branding.appName ?? defaults.appName,
       primaryColor: configuration?.branding.primaryColor ?? defaults.primaryColor,
+      secondaryColor: configuration?.branding.secondaryColor ?? defaults.secondaryColor,
+      backgroundColor: configuration?.branding.backgroundColor ?? defaults.backgroundColor,
+      cardColor: configuration?.branding.cardColor ?? defaults.cardColor,
+      textColor: configuration?.branding.textColor ?? defaults.textColor,
+      headingFont: configuration?.branding.headingFont ?? defaults.headingFont,
+      bodyFont: configuration?.branding.bodyFont ?? defaults.bodyFont,
+      borderRadius: configuration?.branding.borderRadius ?? defaults.borderRadius,
       loginTitle: configuration?.branding.loginTitle ?? defaults.loginTitle,
       loginSubtitle: configuration?.branding.loginSubtitle ?? defaults.loginSubtitle,
       logoAssetId: configuration?.logoAssetId ?? null,
+      squareLogoAssetId: configuration?.squareLogoAssetId ?? null,
+      darkLogoAssetId: configuration?.darkLogoAssetId ?? null,
       faviconAssetId: configuration?.faviconAssetId ?? null,
       logoUrl: logo,
+      squareLogoUrl: squareLogo,
+      darkLogoUrl: darkLogo,
       faviconUrl: favicon,
       revision: configuration?.branding.revision ?? 0,
       updatedAt: configuration?.branding.updatedAt.toISOString() ?? null,
@@ -202,13 +255,22 @@ export class BrandingService {
       const references = await this.references.getMany(
         APPLICATION_BRANDING_REFERENCE.ownerType,
         APPLICATION_BRANDING_REFERENCE.ownerId,
-        [APPLICATION_BRANDING_REFERENCE.fields.logo, APPLICATION_BRANDING_REFERENCE.fields.favicon],
+        Object.values(APPLICATION_BRANDING_REFERENCE.fields),
         transaction,
       );
+      const assetIds = {
+        logo: references[APPLICATION_BRANDING_REFERENCE.fields.logo] ?? null,
+        squareLogo: references[APPLICATION_BRANDING_REFERENCE.fields.squareLogo] ?? null,
+        darkLogo: references[APPLICATION_BRANDING_REFERENCE.fields.darkLogo] ?? null,
+        favicon: references[APPLICATION_BRANDING_REFERENCE.fields.favicon] ?? null,
+      };
       return {
         branding,
-        logoAssetId: references[APPLICATION_BRANDING_REFERENCE.fields.logo] ?? null,
-        faviconAssetId: references[APPLICATION_BRANDING_REFERENCE.fields.favicon] ?? null,
+        assetIds,
+        logoAssetId: assetIds.logo,
+        squareLogoAssetId: assetIds.squareLogo,
+        darkLogoAssetId: assetIds.darkLogo,
+        faviconAssetId: assetIds.favicon,
       };
     });
   }
@@ -218,7 +280,7 @@ export class BrandingService {
     const asset = await this.library.get(assetId);
     if (asset.status !== 'active' || asset.mediaKind !== 'image' || !asset.checksumSha256)
       return null;
-    return `/api/branding/assets/${kind}?v=${asset.checksumSha256.slice(0, 16)}`;
+    return `/api/branding/assets/${APPLICATION_BRANDING_REFERENCE.fields[kind]}?v=${asset.checksumSha256.slice(0, 16)}`;
   }
 
   private defaults() {

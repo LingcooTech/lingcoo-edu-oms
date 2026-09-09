@@ -30,9 +30,18 @@ export function useUpdateBranding() {
       client.setQueryData(brandingQueryKeys.public, {
         appName: configuration.appName,
         primaryColor: configuration.primaryColor,
+        secondaryColor: configuration.secondaryColor,
+        backgroundColor: configuration.backgroundColor,
+        cardColor: configuration.cardColor,
+        textColor: configuration.textColor,
+        headingFont: configuration.headingFont,
+        bodyFont: configuration.bodyFont,
+        borderRadius: configuration.borderRadius,
         loginTitle: configuration.loginTitle,
         loginSubtitle: configuration.loginSubtitle,
         logoUrl: configuration.logoUrl,
+        squareLogoUrl: configuration.squareLogoUrl,
+        darkLogoUrl: configuration.darkLogoUrl,
         faviconUrl: configuration.faviconUrl,
         revision: configuration.revision,
       });

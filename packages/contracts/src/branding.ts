@@ -16,16 +16,32 @@ function plainSingleLineText(min: number, max: number) {
 export const brandingAppNameSchema = plainSingleLineText(1, 120);
 export const brandingLoginTitleSchema = plainSingleLineText(1, 120);
 export const brandingLoginSubtitleSchema = plainSingleLineText(1, 240);
-export const brandingPrimaryColorSchema = z
+export const brandingColorSchema = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, '主题色必须是 #RRGGBB')
   .transform((value) => value.toLowerCase());
+export const brandingFontFamilySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  .refine((value) => !/[;{}<>\r\n]/.test(value), '字体名称包含不允许的字符');
+export const brandingBorderRadiusSchema = z.number().int().min(0).max(24);
 
 const brandingValuesSchema = z.object({
   appName: brandingAppNameSchema,
   logoAssetId: idSchema.nullable(),
+  squareLogoAssetId: idSchema.nullable(),
+  darkLogoAssetId: idSchema.nullable(),
   faviconAssetId: idSchema.nullable(),
-  primaryColor: brandingPrimaryColorSchema,
+  primaryColor: brandingColorSchema,
+  secondaryColor: brandingColorSchema,
+  backgroundColor: brandingColorSchema,
+  cardColor: brandingColorSchema,
+  textColor: brandingColorSchema,
+  headingFont: brandingFontFamilySchema,
+  bodyFont: brandingFontFamilySchema,
+  borderRadius: brandingBorderRadiusSchema,
   loginTitle: brandingLoginTitleSchema,
   loginSubtitle: brandingLoginSubtitleSchema,
 });
@@ -33,16 +49,22 @@ const brandingValuesSchema = z.object({
 export const publicBrandingSchema = brandingValuesSchema
   .omit({
     logoAssetId: true,
+    squareLogoAssetId: true,
+    darkLogoAssetId: true,
     faviconAssetId: true,
   })
   .extend({
     logoUrl: z.string().startsWith('/api/branding/assets/logo').nullable(),
+    squareLogoUrl: z.string().startsWith('/api/branding/assets/square-logo').nullable(),
+    darkLogoUrl: z.string().startsWith('/api/branding/assets/dark-logo').nullable(),
     faviconUrl: z.string().startsWith('/api/branding/assets/favicon').nullable(),
     revision: z.number().int().nonnegative(),
   });
 
 export const brandingConfigurationSchema = brandingValuesSchema.extend({
   logoUrl: z.string().startsWith('/api/branding/assets/logo').nullable(),
+  squareLogoUrl: z.string().startsWith('/api/branding/assets/square-logo').nullable(),
+  darkLogoUrl: z.string().startsWith('/api/branding/assets/dark-logo').nullable(),
   faviconUrl: z.string().startsWith('/api/branding/assets/favicon').nullable(),
   revision: z.number().int().nonnegative(),
   updatedAt: isoDateTimeSchema.nullable(),

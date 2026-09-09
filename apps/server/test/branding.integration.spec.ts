@@ -166,9 +166,20 @@ suite('branding PostgreSQL integration', () => {
     expect(publicResponse.json()).toEqual({
       appName: 'Branding Integration',
       primaryColor: '#1677ff',
+      secondaryColor: '#722ed1',
+      backgroundColor: '#f4f6fa',
+      cardColor: '#ffffff',
+      textColor: '#172033',
+      headingFont:
+        "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      bodyFont:
+        "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      borderRadius: 8,
       loginTitle: '登录 Lingcoo Edu OMS',
       loginSubtitle: '使用邮箱或手机号登录',
       logoUrl: null,
+      squareLogoUrl: null,
+      darkLogoUrl: null,
       faviconUrl: null,
       revision: 0,
     });
@@ -207,8 +218,17 @@ suite('branding PostgreSQL integration', () => {
         expectedRevision: 0,
         appName: 'Lingcoo Console',
         logoAssetId: logo.id,
+        squareLogoAssetId: logo.id,
+        darkLogoAssetId: logo.id,
         faviconAssetId: logo.id,
         primaryColor: '#16A085',
+        secondaryColor: '#722ED1',
+        backgroundColor: '#F4F6FA',
+        cardColor: '#FFFFFF',
+        textColor: '#172033',
+        headingFont: 'PingFang SC, sans-serif',
+        bodyFont: 'PingFang SC, sans-serif',
+        borderRadius: 12,
         loginTitle: '欢迎回来',
         loginSubtitle: '请使用管理员账号继续',
       },
@@ -217,12 +237,17 @@ suite('branding PostgreSQL integration', () => {
     expect(updated.json()).toMatchObject({
       appName: 'Lingcoo Console',
       logoAssetId: logo.id,
+      squareLogoAssetId: logo.id,
+      darkLogoAssetId: logo.id,
       faviconAssetId: logo.id,
       primaryColor: '#16a085',
+      secondaryColor: '#722ed1',
+      borderRadius: 12,
       revision: 1,
     });
     expect(updated.json().logoUrl).toMatch(/^\/api\/branding\/assets\/logo\?v=/);
-    expect(await database.db.select().from(storageAssetReferences)).toHaveLength(2);
+    expect(updated.json().squareLogoUrl).toMatch(/^\/api\/branding\/assets\/square-logo\?v=/);
+    expect(await database.db.select().from(storageAssetReferences)).toHaveLength(4);
     expect(await database.db.select().from(applicationBranding)).toHaveLength(1);
 
     const publicResponse = await app.inject({ method: 'GET', url: '/api/branding/public' });
@@ -243,15 +268,24 @@ suite('branding PostgreSQL integration', () => {
         expectedRevision: 0,
         appName: 'Stale overwrite',
         logoAssetId: null,
+        squareLogoAssetId: null,
+        darkLogoAssetId: null,
         faviconAssetId: null,
         primaryColor: '#000000',
+        secondaryColor: '#722ed1',
+        backgroundColor: '#f4f6fa',
+        cardColor: '#ffffff',
+        textColor: '#172033',
+        headingFont: 'sans-serif',
+        bodyFont: 'sans-serif',
+        borderRadius: 8,
         loginTitle: '失效更新',
         loginSubtitle: '不能生效',
       },
     });
     expect(stale.statusCode).toBe(409);
     expect(stale.json().error.code).toBe('BRANDING_VERSION_CONFLICT');
-    expect(await database.db.select().from(storageAssetReferences)).toHaveLength(2);
+    expect(await database.db.select().from(storageAssetReferences)).toHaveLength(4);
 
     const blockedDelete = await app.inject({
       method: 'DELETE',
@@ -283,8 +317,17 @@ suite('branding PostgreSQL integration', () => {
         expectedRevision: 0,
         appName: 'Invalid Branding',
         logoAssetId: text.id,
+        squareLogoAssetId: null,
+        darkLogoAssetId: null,
         faviconAssetId: null,
         primaryColor: '#1677ff',
+        secondaryColor: '#722ed1',
+        backgroundColor: '#f4f6fa',
+        cardColor: '#ffffff',
+        textColor: '#172033',
+        headingFont: 'sans-serif',
+        bodyFont: 'sans-serif',
+        borderRadius: 8,
         loginTitle: '欢迎登录',
         loginSubtitle: '继续',
       },

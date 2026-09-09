@@ -653,11 +653,22 @@ test.beforeEach(async ({ page }) => {
   let branding = {
     appName: 'Fastify Business',
     logoAssetId: null as string | null,
+    squareLogoAssetId: null as string | null,
+    darkLogoAssetId: null as string | null,
     faviconAssetId: null as string | null,
     primaryColor: '#1677ff',
+    secondaryColor: '#722ed1',
+    backgroundColor: '#f4f6fa',
+    cardColor: '#ffffff',
+    textColor: '#172033',
+    headingFont: 'sans-serif',
+    bodyFont: 'sans-serif',
+    borderRadius: 8,
     loginTitle: '登录管理后台',
     loginSubtitle: '使用部署管理员账号继续',
     logoUrl: null as string | null,
+    squareLogoUrl: null as string | null,
+    darkLogoUrl: null as string | null,
     faviconUrl: null as string | null,
     revision: 0,
     updatedAt: null as string | null,
@@ -682,6 +693,12 @@ test.beforeEach(async ({ page }) => {
         ...branding,
         ...input,
         logoUrl: input.logoAssetId ? `/api/branding/assets/logo?v=${'d'.repeat(16)}` : null,
+        squareLogoUrl: input.squareLogoAssetId
+          ? `/api/branding/assets/square-logo?v=${'d'.repeat(16)}`
+          : null,
+        darkLogoUrl: input.darkLogoAssetId
+          ? `/api/branding/assets/dark-logo?v=${'d'.repeat(16)}`
+          : null,
         faviconUrl: input.faviconAssetId
           ? `/api/branding/assets/favicon?v=${'d'.repeat(16)}`
           : null,
@@ -694,9 +711,18 @@ test.beforeEach(async ({ page }) => {
         ? {
             appName: branding.appName,
             primaryColor: branding.primaryColor,
+            secondaryColor: branding.secondaryColor,
+            backgroundColor: branding.backgroundColor,
+            cardColor: branding.cardColor,
+            textColor: branding.textColor,
+            headingFont: branding.headingFont,
+            bodyFont: branding.bodyFont,
+            borderRadius: branding.borderRadius,
             loginTitle: branding.loginTitle,
             loginSubtitle: branding.loginSubtitle,
             logoUrl: branding.logoUrl,
+            squareLogoUrl: branding.squareLogoUrl,
+            darkLogoUrl: branding.darkLogoUrl,
             faviconUrl: branding.faviconUrl,
             revision: branding.revision,
           }

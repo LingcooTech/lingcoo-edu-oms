@@ -3,10 +3,11 @@ import { useBranding } from './BrandingProvider';
 export function BrandMark({ compact = false }: { compact?: boolean }) {
   const branding = useBranding();
   const fallback = initials(branding.appName);
-  return branding.logoUrl ? (
+  const logoUrl = compact ? (branding.squareLogoUrl ?? branding.logoUrl) : branding.logoUrl;
+  return logoUrl ? (
     <img
       className={compact ? 'brand-mark brand-mark--compact' : 'brand-mark'}
-      src={branding.logoUrl}
+      src={logoUrl}
       alt={branding.appName}
     />
   ) : (

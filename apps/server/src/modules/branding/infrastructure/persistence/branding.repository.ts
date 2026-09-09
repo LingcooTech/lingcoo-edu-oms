@@ -54,7 +54,19 @@ export class BrandingRepository {
     revision: number,
     input: Pick<
       typeof applicationBranding.$inferInsert,
-      'appName' | 'primaryColor' | 'loginTitle' | 'loginSubtitle' | 'updatedBy' | 'updatedAt'
+      | 'appName'
+      | 'primaryColor'
+      | 'secondaryColor'
+      | 'backgroundColor'
+      | 'cardColor'
+      | 'textColor'
+      | 'headingFont'
+      | 'bodyFont'
+      | 'borderRadius'
+      | 'loginTitle'
+      | 'loginSubtitle'
+      | 'updatedBy'
+      | 'updatedAt'
     >,
     executor: DatabaseTransaction,
   ) {

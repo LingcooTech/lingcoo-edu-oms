@@ -40,6 +40,16 @@ export async function registerBrandingRoutes(app: FastifyInstance, service: Bran
     async (_request, reply) => sendImage(reply, await service.assetContent('logo')),
   );
   app.get(
+    '/api/branding/assets/square-logo',
+    { config: { access: { public: true } } },
+    async (_request, reply) => sendImage(reply, await service.assetContent('squareLogo')),
+  );
+  app.get(
+    '/api/branding/assets/dark-logo',
+    { config: { access: { public: true } } },
+    async (_request, reply) => sendImage(reply, await service.assetContent('darkLogo')),
+  );
+  app.get(
     '/api/branding/assets/favicon',
     { config: { access: { public: true } } },
     async (_request, reply) => sendImage(reply, await service.assetContent('favicon')),

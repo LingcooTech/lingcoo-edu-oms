@@ -24,9 +24,18 @@ describe('BrandingProvider', () => {
       data: {
         appName: 'Lingcoo Console',
         primaryColor: '#16a085',
+        secondaryColor: '#722ed1',
+        backgroundColor: '#f4f6fa',
+        cardColor: '#ffffff',
+        textColor: '#172033',
+        headingFont: 'sans-serif',
+        bodyFont: 'sans-serif',
+        borderRadius: 8,
         loginTitle: '欢迎回来',
         loginSubtitle: '继续登录',
         logoUrl: null,
+        squareLogoUrl: null,
+        darkLogoUrl: null,
         faviconUrl: '/api/branding/assets/favicon?v=abc',
         revision: 2,
       },
@@ -41,6 +50,8 @@ describe('BrandingProvider', () => {
     expect(document.querySelector<HTMLLinkElement>('link[data-branding-favicon]')?.href).toContain(
       '/api/branding/assets/favicon?v=abc',
     );
+    expect(document.documentElement.style.getPropertyValue('--brand-primary')).toBe('#16a085');
+    expect(document.documentElement.style.getPropertyValue('--brand-radius')).toBe('8px');
   });
 
   it('falls back without blocking rendering when the public request fails', () => {

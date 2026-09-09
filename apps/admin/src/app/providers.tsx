@@ -51,9 +51,14 @@ function BrandedAntDesign({ mode, children }: { mode: 'light' | 'dark'; children
         algorithm: mode === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
           colorPrimary: branding.primaryColor,
-          borderRadius: 8,
-          fontFamily:
-            "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          colorInfo: branding.primaryColor,
+          colorLink: branding.primaryColor,
+          colorLinkHover: branding.secondaryColor,
+          colorBgLayout: mode === 'light' ? branding.backgroundColor : undefined,
+          colorBgContainer: mode === 'light' ? branding.cardColor : undefined,
+          colorText: mode === 'light' ? branding.textColor : undefined,
+          borderRadius: branding.borderRadius,
+          fontFamily: branding.bodyFont,
         },
       }}
     >

@@ -16,6 +16,7 @@ import {
   Select,
   Space,
   Switch,
+  Tabs,
   Tag,
   Typography,
 } from 'antd';
@@ -116,31 +117,80 @@ export function SettingsPage({
         style={{ marginBottom: 16 }}
       />
       <AsyncState loading={settings.isPending} error={settings.error} empty={groups.length === 0}>
-        <div className="settings-groups">
-          {groups.map(([key, group]) => (
-            <Card
-              key={key}
-              title={
-                <Space>
-                  <SettingOutlined />
-                  {group.label}
-                </Space>
-              }
-            >
-              <div className="settings-list">
-                {group.items.map((setting) => (
-                  <SettingEditor key={setting.key} setting={setting} canManage={canManage} />
-                ))}
-              </div>
-            </Card>
-          ))}
-          {connectionTests.length > 0 && (
-            <ConnectionTests items={connectionTests} canManage={canManage} />
-          )}
-        </div>
+        <Card className="settings-provider-shell">
+          <Tabs
+            className="settings-provider-tabs"
+            tabPosition="top"
+            items={groups.map(([key, group]) => ({
+              key,
+              label: group.label,
+              children: (
+                <SettingsProvider
+                  groupKey={key}
+                  label={group.label}
+                  items={group.items}
+                  tests={connectionTests.filter((item) => item.group === key)}
+                  canManage={canManage}
+                />
+              ),
+            }))}
+          />
+        </Card>
       </AsyncState>
     </PageContainer>
   );
+}
+
+function SettingsProvider({
+  groupKey,
+  label,
+  items,
+  tests,
+  canManage,
+}: {
+  groupKey: string;
+  label: string;
+  items: SettingView[];
+  tests: SettingsConnectionTest[];
+  canManage: boolean;
+}) {
+  const configured = items.filter((item) => item.configured).length;
+  return (
+    <div className="settings-provider" data-settings-group={groupKey}>
+      <div className="settings-provider__header">
+        <div>
+          <Space>
+            <SettingOutlined />
+            <Typography.Title level={5}>{label}</Typography.Title>
+          </Space>
+          <Typography.Paragraph type="secondary">
+            {providerDescription(groupKey)}
+          </Typography.Paragraph>
+        </div>
+        <Tag color={configured === items.length ? 'success' : 'processing'}>
+          已配置 {configured}/{items.length}
+        </Tag>
+      </div>
+      <div className="settings-field-grid">
+        {items.map((setting) => (
+          <SettingEditor key={setting.key} setting={setting} canManage={canManage} />
+        ))}
+      </div>
+      {tests.length > 0 && <ConnectionTests items={tests} canManage={canManage} />}
+    </div>
+  );
+}
+
+function providerDescription(group: string): string {
+  const descriptions: Record<string, string> = {
+    application: '应用公共地址、默认语言和运行时基础参数。',
+    mail: 'SMTP 发信身份、传输安全和投递模式。',
+    storage: '素材库文件存储；七牛云 Kodo 通过 S3-compatible 参数接入。',
+    'wechat-pay': '微信支付 APIv3 商户身份、签名密钥和回调地址。',
+    'content-sources': '外部内容来源；当前仅接入 Notion Connection。',
+    'wechat-mini-program': '微信小程序服务端身份、运行版本和订阅消息模板。',
+  };
+  return descriptions[group] ?? '集中维护该服务的运行参数和敏感凭据。';
 }
 
 function SettingEditor({ setting, canManage }: { setting: SettingView; canManage: boolean }) {
@@ -195,7 +245,10 @@ function SettingEditor({ setting, canManage }: { setting: SettingView; canManage
 
   const source = sourcePresentation[setting.source];
   return (
-    <section className="setting-row" data-setting-key={setting.key}>
+    <section
+      className={`setting-field${setting.control === 'textarea' ? ' setting-field--wide' : ''}`}
+      data-setting-key={setting.key}
+    >
       <div className="setting-row__meta">
         <Space wrap>
           <Typography.Text strong>{setting.label}</Typography.Text>
@@ -203,9 +256,6 @@ function SettingEditor({ setting, canManage }: { setting: SettingView; canManage
           {setting.kind === 'secret' && <Tag color="red">敏感</Tag>}
         </Space>
         <Typography.Paragraph type="secondary">{setting.description}</Typography.Paragraph>
-        <Typography.Text type="secondary" code>
-          {setting.key}
-        </Typography.Text>
       </div>
       <div className="setting-row__editor">
         <SettingControl setting={setting} value={draft} disabled={!mutable} onChange={setDraft} />
@@ -337,14 +387,11 @@ function ConnectionTests({
   };
 
   return (
-    <Card
-      title={
-        <Space>
-          <ApiOutlined />
-          连接测试
-        </Space>
-      }
-    >
+    <div className="settings-tests-panel">
+      <div className="settings-tests-panel__title">
+        <ApiOutlined />
+        <Typography.Text strong>连接测试</Typography.Text>
+      </div>
       <div className="settings-tests">
         {items.map((item) => (
           <div key={item.key} className="settings-test">
@@ -360,6 +407,6 @@ function ConnectionTests({
           </div>
         ))}
       </div>
-    </Card>
+    </div>
   );
 }
