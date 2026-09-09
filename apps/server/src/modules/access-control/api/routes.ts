@@ -1,6 +1,8 @@
 import { ApiError } from '@lingcoo-tech/http';
 import {
   createAccessUserRequestSchema,
+  adminResetPasswordRequestSchema,
+  replaceEducationAssignmentsRequestSchema,
   createRoleRequestSchema,
   replaceRolePermissionsRequestSchema,
   replaceUserRolesRequestSchema,
@@ -52,7 +54,7 @@ function currentActor(request: Parameters<typeof auditContextFromRequest>[0]) {
   return auditContextFromRequest(request, {
     type: 'user',
     id: user.id,
-    label: user.displayName ?? user.email,
+    label: user.displayName ?? user.email ?? user.phone,
   });
 }
 
@@ -198,6 +200,56 @@ export async function registerAccessControlRoutes(
       return serializeUser(
         await service.replaceUserRoles(id, input.roleIds, currentActor(request)),
       );
+    },
+  );
+
+  app.post(
+    '/api/access/users/:id/password/reset',
+    {
+      config: { access: { permissions: ['accounts.reset-password'] } },
+      preHandler: app.rateLimit({ max: 10, timeWindow: '1 minute' }),
+    },
+    async (request) => {
+      const { id } = parse(idParamsSchema, request.params);
+      const { newPassword } = parse(adminResetPasswordRequestSchema, request.body);
+      await service.resetUserPassword(
+        request.identityPrincipal!.user.id,
+        id,
+        newPassword,
+        currentActor(request),
+      );
+      return { accepted: true } as const;
+    },
+  );
+
+  app.get(
+    '/api/access/education-context',
+    { config: { access: { permissions: [] } } },
+    async (request) => ({
+      items: await service.educationAssignments(request.identityPrincipal!.user.id),
+    }),
+  );
+  app.get(
+    '/api/access/users/:id/education-assignments',
+    {
+      config: { access: { permissions: ['accounts.read'] } },
+    },
+    async (request) => {
+      const { id } = parse(idParamsSchema, request.params);
+      await service.getUser(id);
+      return { items: await service.educationAssignments(id) };
+    },
+  );
+  app.put(
+    '/api/access/users/:id/education-assignments',
+    {
+      config: { access: { permissions: ['accounts.manage', 'roles.manage'] } },
+    },
+    async (request) => {
+      const { id } = parse(idParamsSchema, request.params);
+      const { assignments } = parse(replaceEducationAssignmentsRequestSchema, request.body);
+      await service.replaceEducationAssignments(id, assignments, currentActor(request));
+      return { items: await service.educationAssignments(id) };
     },
   );
 }

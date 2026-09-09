@@ -150,3 +150,15 @@ export function useReplaceUserRoles() {
     },
   });
 }
+
+export function useResetUserPassword() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      accessApi.resetUserPassword(id, { newPassword: password }),
+    onSuccess: (_result, { id }) => {
+      void client.invalidateQueries({ queryKey: accessQueryKeys.user(id) });
+      void client.invalidateQueries({ queryKey: ['access', 'users'] });
+    },
+  });
+}

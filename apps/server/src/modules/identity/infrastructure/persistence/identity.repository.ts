@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gt, ilike, isNull, lt, ne, or } from 'drizzle-orm';
+import { and, count, desc, eq, gt, ilike, inArray, isNull, lt, ne, or } from 'drizzle-orm';
 
 import type {
   DatabaseExecutor,
@@ -28,6 +28,8 @@ function publicUser(user: typeof identityUsers.$inferSelect): PublicIdentityUser
   return {
     id: user.id,
     email: user.email,
+    phone: user.phone,
+    mustChangePassword: user.mustChangePassword,
     displayName: user.displayName,
     status: user.status,
     emailVerifiedAt: user.emailVerifiedAt,
@@ -40,6 +42,23 @@ export class IdentityRepository {
 
   async findCredentialByEmail(email: string): Promise<IdentityCredential | null> {
     return this.findCredential(eq(identityUsers.email, email));
+  }
+
+  async findCredentialByIdentifier(identifier: string): Promise<IdentityCredential | null> {
+    return this.findCredential(
+      identifier.startsWith('+86')
+        ? eq(identityUsers.phone, identifier)
+        : eq(identityUsers.email, identifier),
+    );
+  }
+
+  // Serialize session creation with password changes and account disabling.
+  async lockUser(userId: string, executor: DatabaseExecutor): Promise<void> {
+    await executor
+      .select({ id: identityUsers.id })
+      .from(identityUsers)
+      .where(eq(identityUsers.id, userId))
+      .for('update');
   }
 
   async findCredentialByUserId(
@@ -70,6 +89,18 @@ export class IdentityRepository {
     return user ? publicUser(user) : null;
   }
 
+  async findUsersByIds(
+    userIds: string[],
+    executor: DatabaseExecutor = this.database.db,
+  ): Promise<PublicIdentityUser[]> {
+    if (userIds.length === 0) return [];
+    const users = await executor
+      .select()
+      .from(identityUsers)
+      .where(inArray(identityUsers.id, [...new Set(userIds)]));
+    return users.map(publicUser);
+  }
+
   async listUsers(input: {
     page: number;
     pageSize: number;
@@ -79,6 +110,7 @@ export class IdentityRepository {
     const searchCondition = input.search
       ? or(
           ilike(identityUsers.email, `%${input.search}%`),
+          ilike(identityUsers.phone, `%${input.search}%`),
           ilike(identityUsers.displayName, `%${input.search}%`),
         )
       : undefined;
@@ -106,7 +138,9 @@ export class IdentityRepository {
 
   async createUser(
     input: {
-      email: string;
+      email?: string | null;
+      phone?: string | null;
+      mustChangePassword?: boolean;
       displayName?: string | null;
       passwordHash: string;
       emailVerified: boolean;
@@ -118,8 +152,10 @@ export class IdentityRepository {
         .insert(identityUsers)
         .values({
           email: input.email,
+          phone: input.phone,
+          mustChangePassword: input.mustChangePassword ?? false,
           displayName: input.displayName,
-          emailVerifiedAt: input.emailVerified ? new Date() : null,
+          emailVerifiedAt: input.email && input.emailVerified ? new Date() : null,
         })
         .returning();
       if (!user) throw new Error('Failed to create identity user');
@@ -172,12 +208,24 @@ export class IdentityRepository {
     userId: string,
     passwordHash: string,
     executor?: DatabaseExecutor,
+    mustChangePassword = false,
   ): Promise<void> {
     const change = async (writeExecutor: DatabaseExecutor) => {
+      await this.lockUser(userId, writeExecutor);
       await writeExecutor
         .update(identityPasswordCredentials)
         .set({ passwordHash, passwordChangedAt: new Date() })
         .where(eq(identityPasswordCredentials.userId, userId));
+      await writeExecutor
+        .update(identityUsers)
+        .set({ mustChangePassword, updatedAt: new Date() })
+        .where(eq(identityUsers.id, userId));
+      await writeExecutor
+        .update(identityActionTokens)
+        .set({ consumedAt: new Date() })
+        .where(
+          and(eq(identityActionTokens.userId, userId), isNull(identityActionTokens.consumedAt)),
+        );
       await this.revokeSessions(writeExecutor, userId);
     };
     await (executor ? change(executor) : this.database.transaction(change));
@@ -301,6 +349,7 @@ export class IdentityRepository {
     executor?: DatabaseExecutor,
   ): Promise<void> {
     const create = async (writeExecutor: DatabaseExecutor) => {
+      await this.lockUser(input.userId, writeExecutor);
       await writeExecutor
         .update(identityActionTokens)
         .set({ consumedAt: new Date() })
@@ -321,6 +370,12 @@ export class IdentityRepository {
     executor?: DatabaseExecutor,
   ): Promise<string | null> {
     const consume = async (writeExecutor: DatabaseExecutor) => {
+      const [candidate] = await writeExecutor
+        .select({ userId: identityActionTokens.userId })
+        .from(identityActionTokens)
+        .where(eq(identityActionTokens.tokenDigest, tokenDigest));
+      if (!candidate) return false;
+      await this.lockUser(candidate.userId, writeExecutor);
       const [token] = await writeExecutor
         .update(identityActionTokens)
         .set({ consumedAt: new Date() })
@@ -350,6 +405,12 @@ export class IdentityRepository {
     executor?: DatabaseExecutor,
   ): Promise<string | null> {
     const reset = async (writeExecutor: DatabaseExecutor) => {
+      const [candidate] = await writeExecutor
+        .select({ userId: identityActionTokens.userId })
+        .from(identityActionTokens)
+        .where(eq(identityActionTokens.tokenDigest, tokenDigest));
+      if (!candidate) return false;
+      await this.lockUser(candidate.userId, writeExecutor);
       const [token] = await writeExecutor
         .update(identityActionTokens)
         .set({ consumedAt: new Date() })
@@ -363,11 +424,7 @@ export class IdentityRepository {
         )
         .returning({ userId: identityActionTokens.userId });
       if (!token) return false;
-      await writeExecutor
-        .update(identityPasswordCredentials)
-        .set({ passwordHash, passwordChangedAt: new Date() })
-        .where(eq(identityPasswordCredentials.userId, token.userId));
-      await this.revokeSessions(writeExecutor, token.userId);
+      await this.changePasswordAndRevokeSessions(token.userId, passwordHash, writeExecutor);
       return token.userId;
     };
     const result = executor ? await reset(executor) : await this.database.transaction(reset);

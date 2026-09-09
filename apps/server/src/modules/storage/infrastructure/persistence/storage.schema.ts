@@ -22,7 +22,7 @@ import type {
   StorageProvider,
 } from '@lingcoo-edu-oms/contracts';
 
-import { identityUsers } from '../../../identity/public.js';
+import { identityUsersForeignKeyTarget } from '../../../../database/foreign-key-targets.js';
 
 export const storageAssets = pgTable(
   'storage_assets',
@@ -39,8 +39,12 @@ export const storageAssets = pgTable(
     currentVersion: integer('current_version').notNull().default(0),
     pendingVersion: integer('pending_version'),
     revision: integer('revision').notNull().default(1),
-    createdBy: uuid('created_by').references(() => identityUsers.id, { onDelete: 'set null' }),
-    updatedBy: uuid('updated_by').references(() => identityUsers.id, { onDelete: 'set null' }),
+    createdBy: uuid('created_by').references(() => identityUsersForeignKeyTarget.id, {
+      onDelete: 'set null',
+    }),
+    updatedBy: uuid('updated_by').references(() => identityUsersForeignKeyTarget.id, {
+      onDelete: 'set null',
+    }),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -95,7 +99,9 @@ export const storageObjects = pgTable(
     deduplicationHash: char('deduplication_hash', { length: 64 }).notNull(),
     requestHash: char('request_hash', { length: 64 }).notNull(),
     failureCode: varchar('failure_code', { length: 120 }),
-    createdBy: uuid('created_by').references(() => identityUsers.id, { onDelete: 'set null' }),
+    createdBy: uuid('created_by').references(() => identityUsersForeignKeyTarget.id, {
+      onDelete: 'set null',
+    }),
     readyAt: timestamp('ready_at', { withTimezone: true }),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -141,7 +147,9 @@ export const storageAssetReferences = pgTable(
     ownerType: varchar('owner_type', { length: 120 }).notNull(),
     ownerId: varchar('owner_id', { length: 200 }).notNull(),
     field: varchar('field', { length: 120 }).notNull(),
-    createdBy: uuid('created_by').references(() => identityUsers.id, { onDelete: 'set null' }),
+    createdBy: uuid('created_by').references(() => identityUsersForeignKeyTarget.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

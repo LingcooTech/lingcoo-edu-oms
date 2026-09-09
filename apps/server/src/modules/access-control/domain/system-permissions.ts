@@ -4,6 +4,12 @@ export const OWNER_ROLE_KEY = 'system.owner';
 
 export const SYSTEM_PERMISSIONS = [
   {
+    key: 'accounts.reset-password',
+    group: '访问控制',
+    name: '重置账号密码',
+    description: '重置非 Owner 账号密码并撤销全部会话。',
+  },
+  {
     key: 'accounts.read',
     group: '访问控制',
     name: '查看账号',

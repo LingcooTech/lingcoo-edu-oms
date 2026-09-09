@@ -1,5 +1,10 @@
 import {
   acceptedActionSchema,
+  adminResetPasswordRequestSchema,
+  type AdminResetPasswordRequest,
+  educationAssignmentsSchema,
+  replaceEducationAssignmentsRequestSchema,
+  type ReplaceEducationAssignmentsRequest,
   accessRoleSchema,
   accessUserPageSchema,
   accessUserSchema,
@@ -32,6 +37,26 @@ function queryString(input: Record<string, string | number | undefined>): string
 
 export function createAccessControlApi(client: ApiClient) {
   return {
+    educationContext() {
+      return client.request({
+        path: '/api/access/education-context',
+        schema: educationAssignmentsSchema,
+      });
+    },
+    educationAssignments(id: string) {
+      return client.request({
+        path: `/api/access/users/${encodeURIComponent(id)}/education-assignments`,
+        schema: educationAssignmentsSchema,
+      });
+    },
+    replaceEducationAssignments(id: string, input: ReplaceEducationAssignmentsRequest) {
+      return client.request({
+        method: 'PUT',
+        path: `/api/access/users/${encodeURIComponent(id)}/education-assignments`,
+        body: replaceEducationAssignmentsRequestSchema.parse(input),
+        schema: educationAssignmentsSchema,
+      });
+    },
     currentPermissions() {
       return client.request({ path: '/api/access/permissions', schema: currentPermissionsSchema });
     },
@@ -111,6 +136,14 @@ export function createAccessControlApi(client: ApiClient) {
         path: `/api/access/users/${encodeURIComponent(id)}`,
         body: updateAccessUserRequestSchema.parse(input),
         schema: accessUserSchema,
+      });
+    },
+    resetUserPassword(id: string, input: AdminResetPasswordRequest) {
+      return client.request({
+        method: 'POST',
+        path: `/api/access/users/${encodeURIComponent(id)}/password/reset`,
+        body: adminResetPasswordRequestSchema.parse(input),
+        schema: acceptedActionSchema,
       });
     },
     replaceUserRoles(id: string, roleIds: string[]) {

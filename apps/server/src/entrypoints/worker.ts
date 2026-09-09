@@ -14,6 +14,7 @@ import {
   NOTIFICATION_MAIL_TEMPLATES,
 } from '../modules/notifications/public.js';
 import { createSettingsRegistry, createSettingsService } from '../modules/settings/public.js';
+import { createIdentityService } from '../modules/identity/public.js';
 import { createStorageRuntime, STORAGE_SETTINGS } from '../modules/storage/public.js';
 import { createOutboxRunner } from '../modules/outbox/public.js';
 import { applicationOutboxEvents } from '../outbox-event-definitions.js';
@@ -56,11 +57,13 @@ const mail = createMailService({
 jobsRuntime.registry.register(mail.sendJobHandler);
 jobsRuntime.registry.register(mail.cleanupJobHandler);
 jobsRuntime.recurring.register(mail.recurringJob);
+const identity = createIdentityService({ database, environment, audit });
 const notifications = createNotificationsService({
   database,
   environment,
   jobs: jobsRuntime.service,
   mail: mail.service,
+  identity,
   audit,
 });
 jobsRuntime.registry.register(notifications.publishAnnouncementJobHandler);

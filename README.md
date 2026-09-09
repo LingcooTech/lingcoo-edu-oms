@@ -1,8 +1,8 @@
-# Lingcoo Edu Oms
+# Lingcoo Edu OMS
 
-一个基于原生 Fastify、TypeScript、PostgreSQL、Drizzle、React 和 pnpm workspace 的通用业务应用起步工程。
+Lingcoo 教育运营管理系统的新架构仓库。项目基于原生 Fastify、TypeScript、PostgreSQL、Drizzle、React 和 pnpm workspace，从旧 Edu 系统按业务域渐进迁移。
 
-它保持模块化单体和独立前端入口，在 Base Starter 的工程底座上逐模块增加经过真实项目验证的后台通用能力，不包含教育、零售或平台行业模型。
+当前已完成前三阶段工程实现：Identity 与 Access Control、组织／机构／学员／家长／教师底座，以及机构通用课时包、学员机构课时账户、发放批次和不可变流水。课程、班级、独立课次、签到消课、周期卡和旧生产数据尚未迁移；订单、支付、退款金额及分成结算不属于本 OMS 的迁移范围。
 
 ## 技术结构
 
@@ -11,11 +11,12 @@ lingcoo-edu-oms/
 ├── apps/
 │   ├── server/       # 原生 Fastify API、Worker、Migration
 │   ├── admin/        # React + Vite + Ant Design 管理端
-│   └── web/          # 独立公共 Web 入口，本轮保持空白
+│   └── web/          # 独立公共 Web 入口
 ├── packages/
 │   ├── contracts/    # Server 与浏览器共享的 Zod Contract
 │   └── api-client/   # 无 React 和 UI 依赖的 Fetch Client
 ├── scripts/          # 质量、边界、生成和 smoke 验证
+│   └── migration/    # 旧 Edu 数据迁移预检、执行与验证工具
 ├── docker/           # Caddy 配置
 ├── deploy/           # 生产部署脚本与环境模板
 └── .github/          # CI、Docker、安全与部署工作流
@@ -76,6 +77,7 @@ pnpm smoke:module-generator
 pnpm smoke:admin-static
 pnpm smoke:docker
 pnpm e2e
+pnpm test:migration
 ```
 
 `pnpm check` 包括工具链、starter 版本、模块边界、格式、Lint、类型、测试和 production build。
@@ -101,11 +103,37 @@ pnpm e2e
 - [Webhook Inbox 架构决策](docs/webhook-inbox-decision.md)
 - [CLI 与产品化](docs/productization.md)
 
+## 本地阶段验收
+
+预览环境使用独立的 `lingcoo-edu-oms-preview` PostgreSQL 容器和 55439 端口，不连接旧 Edu 数据库：
+
+```bash
+docker compose -f docker-compose.preview.yml up -d --wait
+pnpm preview:migrate
+pnpm preview:bootstrap
+pnpm preview:api
+pnpm preview:admin  # 另一个终端
+pnpm preview:web    # 另一个终端
+pnpm test:preview
+```
+
+- Web：<http://localhost:15174>
+- Admin：<http://localhost:15173/admin/>
+- API：<http://localhost:18090>
+
+本地预览账号只用于开发验收，定义在被 Git 忽略的 `.env.preview`。迁移工具默认只生成匿名统计计划；生产应用必须再次提供写入开关和目标数据库指纹。
+
+阶段实施结果与截图：
+
+- [P1 身份与权限](docs/acceptance/phase-one-report.md)
+- [P2 组织、机构与人员](docs/acceptance/phase-two-report.md)
+- [P3 课时包、发放与账本](docs/acceptance/phase-three-report.md)
+
+完整路线见[分阶段迁移实施方案](docs/migration/full-migration-plan.md)，P3 生产演练见[课时迁移运行手册](docs/migration/phase3-lessons.md)。
+
 ## 实施边界
 
-通用模块按照 Identity、Access Control、Audit、Settings、Idempotency、Jobs、Outbox、Mail、Notifications、Storage、Branding、Payments 的顺序逐个闭环实施；Webhook Inbox 已完成架构决策，当前不作为默认模块。
-
-当前明确不包含 SaaS 多租户、CMS、Entitlement、AI Gateway，以及教育、零售或 Core Stack 的行业领域模型。
+Starter 提供的 Identity、Access Control、Audit、Settings、Idempotency、Jobs、Outbox、Mail、Notifications、Storage 和 Branding 继续作为统一底座。教育领域必须通过模块公开端口和强制数据范围接入，不能跨模块访问 Repository；P3 的每次课时变动在同一事务中保存账本、审计和 Outbox 事实。
 
 ## 许可证
 

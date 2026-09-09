@@ -1,5 +1,6 @@
 import { ApiError } from '@lingcoo-tech/http';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 
 import type { AppEnvironment } from '../../../config/environment.js';
 import type { IdentityService } from '../../identity/public.js';
@@ -32,6 +33,7 @@ export function installAccessControlGuard(
 ): void {
   app.decorateRequest('identityPrincipal', null);
   app.decorateRequest('accessPermissions', null);
+  app.decorateRequest('educationScope', null);
 
   app.addHook('preHandler', async (request) => {
     if (!isProtectedPath(request.url) || isApiDocs(request.url)) return;
@@ -41,13 +43,53 @@ export function installAccessControlGuard(
     }
     if ('public' in policy) return;
 
-    await authenticate(request, dependencies.environment, dependencies.identity);
-    if (isUnsafeMethod(request.method)) validateCsrf(request, dependencies.identity);
+    const authTransport = await authenticate(
+      request,
+      dependencies.environment,
+      dependencies.identity,
+    );
+    if (authTransport === 'cookie' && isUnsafeMethod(request.method)) {
+      validateCsrf(request, dependencies.identity);
+    }
 
     const principal = request.identityPrincipal!;
+    const passwordChangeRoutes = new Set([
+      'GET /api/auth/me',
+      'HEAD /api/auth/me',
+      'POST /api/auth/logout',
+      'POST /api/auth/password/change',
+    ]);
+    if (
+      principal.user.mustChangePassword &&
+      !passwordChangeRoutes.has(`${request.method} ${request.routeOptions.url}`)
+    ) {
+      throw new ApiError(403, 'PASSWORD_CHANGE_REQUIRED', '请先修改密码');
+    }
     const permissions = await dependencies.access.permissionsForUser(principal.user.id);
     request.accessPermissions = permissions;
     const granted = new Set(permissions);
+    if (
+      policy.permissions.some((permission) => permission.startsWith('education.')) &&
+      !policy.education &&
+      !policy.allowUnscopedEducation
+    ) {
+      throw new ApiError(403, 'ACCESS_SCOPE_REQUIRED', '教务接口必须声明数据访问范围');
+    }
+    if (policy.education) {
+      const institutionId = z
+        .uuid()
+        .safeParse((request.params as Record<string, unknown>)[policy.education.institutionParam]);
+      if (!institutionId.success)
+        throw new ApiError(403, 'ACCESS_SCOPE_DENIED', '缺少有效机构范围');
+      request.educationScope = await dependencies.access.resolveEducationScope({
+        userId: principal.user.id,
+        institutionId: institutionId.data,
+        permission: policy.education.permission,
+        capability: policy.education.capability,
+      });
+      // Capabilities can grant this one scoped operation; they never become global permissions.
+      granted.add(policy.education.permission);
+    }
     if (!policy.permissions.every((permission) => granted.has(permission))) {
       throw new ApiError(403, 'ACCESS_PERMISSION_DENIED', '当前账号没有执行此操作所需的权限');
     }
@@ -58,15 +100,22 @@ async function authenticate(
   request: FastifyRequest,
   environment: AppEnvironment,
   identity: IdentityService,
-): Promise<void> {
-  const sessionToken = request.cookies[environment.AUTH_COOKIE_NAME];
-  const csrfToken = request.cookies[environment.AUTH_CSRF_COOKIE_NAME];
+): Promise<'cookie' | 'bearer'> {
+  const cookieSessionToken = request.cookies[environment.AUTH_COOKIE_NAME];
+  const cookieCsrfToken = request.cookies[environment.AUTH_CSRF_COOKIE_NAME];
+  const authorization = firstHeader(request.headers.authorization);
+  const bearerSessionToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const bearerCsrfToken = firstHeader(request.headers['x-csrf-token']);
+  const transport = cookieSessionToken && cookieCsrfToken ? 'cookie' : 'bearer';
+  const sessionToken = transport === 'cookie' ? cookieSessionToken : bearerSessionToken;
+  const csrfToken = transport === 'cookie' ? cookieCsrfToken : bearerCsrfToken;
   if (!sessionToken || !csrfToken) {
     throw new ApiError(401, 'AUTHENTICATION_REQUIRED', '请先登录');
   }
   const session = await identity.resolveSession(sessionToken, csrfToken);
   if (!session) throw new ApiError(401, 'INVALID_SESSION', '登录状态已失效');
   request.identityPrincipal = { ...session, csrfToken };
+  return transport;
 }
 
 function validateCsrf(request: FastifyRequest, identity: IdentityService): void {

@@ -3,10 +3,36 @@ import {
   loginRequestSchema,
   passwordSchema,
   sessionIdentitySchema,
+  mainlandChinaPhoneSchema,
 } from '../src/identity.js';
 import { describe, expect, it } from 'vitest';
 
 describe('identity contracts', () => {
+  it('normalizes mainland phones and rejects ambiguous or invalid identifiers', () => {
+    for (const phone of ['13800138000', '+86 138 0013 8000', '0086-138-0013-8000']) {
+      expect(mainlandChinaPhoneSchema.parse(phone)).toBe('+8613800138000');
+      expect(loginRequestSchema.parse({ identifier: phone, password: 'legacy' }).identifier).toBe(
+        '+8613800138000',
+      );
+    }
+    for (const phone of [
+      '+1 13800138000',
+      '12800138000',
+      '138001380001',
+      '138abc00138000',
+      '8613800138000',
+    ]) {
+      expect(mainlandChinaPhoneSchema.safeParse(phone).success).toBe(false);
+    }
+    expect(loginRequestSchema.safeParse({ password: 'password' }).success).toBe(false);
+    expect(
+      loginRequestSchema.safeParse({
+        identifier: '13800138000',
+        email: 'a@example.com',
+        password: 'password',
+      }).success,
+    ).toBe(false);
+  });
   it('normalizes email addresses', () => {
     expect(emailAddressSchema.parse(' Owner@Example.COM ')).toBe('owner@example.com');
   });
@@ -24,6 +50,8 @@ describe('identity contracts', () => {
       user: {
         id: '7f4cc774-403b-4d44-8c43-8f2fb26f0a85',
         email: 'owner@example.com',
+        phone: null,
+        mustChangePassword: false,
         displayName: null,
         status: 'active',
         emailVerifiedAt: null,

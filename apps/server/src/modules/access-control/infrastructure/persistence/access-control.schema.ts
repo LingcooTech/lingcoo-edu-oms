@@ -7,9 +7,18 @@ import {
   uuid,
   varchar,
   boolean,
+  check,
+  jsonb,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import type { TeacherCapabilities } from '@lingcoo-edu-oms/contracts';
 
-import { identityUsers } from '../../../identity/public.js';
+import {
+  guardiansForeignKeyTarget,
+  identityUsersForeignKeyTarget,
+  institutionsForeignKeyTarget,
+  teachersForeignKeyTarget,
+} from '../../../../database/foreign-key-targets.js';
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -64,7 +73,7 @@ export const accessUserRoles = pgTable(
   {
     userId: uuid('user_id')
       .notNull()
-      .references(() => identityUsers.id, { onDelete: 'cascade' }),
+      .references(() => identityUsersForeignKeyTarget.id, { onDelete: 'cascade' }),
     roleId: uuid('role_id')
       .notNull()
       .references(() => accessRoles.id, { onDelete: 'cascade' }),
@@ -73,5 +82,59 @@ export const accessUserRoles = pgTable(
   (table) => [
     primaryKey({ columns: [table.userId, table.roleId] }),
     index('access_user_roles_role_idx').on(table.roleId),
+  ],
+);
+
+// Domain profile UUIDs are references for the future education modules, not authentication IDs.
+// No default institution: a missing binding always denies scoped access.
+export const accessEducationAssignments = pgTable(
+  'access_education_assignments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => identityUsersForeignKeyTarget.id, { onDelete: 'cascade' }),
+    role: varchar('role', { length: 40 })
+      .$type<'institution_admin' | 'teacher' | 'parent'>()
+      .notNull(),
+    institutionId: uuid('institution_id')
+      .notNull()
+      .references(() => institutionsForeignKeyTarget.id, { onDelete: 'restrict' }),
+    teacherId: uuid('teacher_id').references(() => teachersForeignKeyTarget.id, {
+      onDelete: 'restrict',
+    }),
+    guardianId: uuid('guardian_id').references(() => guardiansForeignKeyTarget.id, {
+      onDelete: 'restrict',
+    }),
+    teacherCapabilities: jsonb('teacher_capabilities')
+      .$type<TeacherCapabilities>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    active: boolean('active').notNull().default(true),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('access_education_assignments_scope_unique').on(
+      table.userId,
+      table.role,
+      table.institutionId,
+    ),
+    index('access_education_assignments_institution_idx').on(table.institutionId),
+    check(
+      'access_education_assignments_role_check',
+      sql`${table.role} in ('institution_admin', 'teacher', 'parent')`,
+    ),
+    check(
+      'access_education_assignments_teacher_check',
+      sql`(${table.role} = 'teacher') = (${table.teacherId} is not null)`,
+    ),
+    check(
+      'access_education_assignments_guardian_check',
+      sql`(${table.role} = 'parent') = (${table.guardianId} is not null)`,
+    ),
+    check(
+      'access_education_assignments_capabilities_check',
+      sql`jsonb_typeof(${table.teacherCapabilities}) = 'object'`,
+    ),
   ],
 );

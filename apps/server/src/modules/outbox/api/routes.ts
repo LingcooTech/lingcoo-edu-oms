@@ -35,7 +35,7 @@ export async function registerOutboxRoutes(app: FastifyInstance, service: Outbox
         ...auditContextFromRequest(request, {
           type: 'user',
           id: user.id,
-          label: user.displayName ?? user.email,
+          label: user.displayName ?? user.email ?? user.phone,
         }),
         actorId: user.id,
       });

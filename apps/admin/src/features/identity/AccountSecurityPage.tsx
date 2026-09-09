@@ -1,5 +1,5 @@
 import { Alert, App, Button, Card, Descriptions, Form, Input, Space, Tag, Typography } from 'antd';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { PageContainer } from '../../components/PageContainer';
 import { useChangePassword, useRequestEmailVerification, useSession } from './hooks';
@@ -7,23 +7,39 @@ import { useChangePassword, useRequestEmailVerification, useSession } from './ho
 export function AccountSecurityPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
+  const location = useLocation();
   const session = useSession();
   const changePassword = useChangePassword();
   const requestVerification = useRequestEmailVerification();
   const user = session.data!.user;
+  const mustChangePassword = user.mustChangePassword;
+  const forcedFromRoute =
+    (location.state as { forcedPasswordChange?: boolean } | null)?.forcedPasswordChange === true;
 
   return (
-    <PageContainer title="账号安全" description="管理当前账号的凭据与邮箱验证状态。">
+    <PageContainer title="账号安全" description="管理当前账号的登录方式、凭据与验证状态。">
+      {(mustChangePassword || forcedFromRoute) && (
+        <Alert
+          className="forced-password-alert"
+          type="warning"
+          showIcon
+          message="首次登录后请立即修改密码"
+          description="为保障账号安全，修改完成后需要使用新密码重新登录。"
+        />
+      )}
       <div className="identity-settings-grid">
         <Card title="账号资料">
           <Descriptions column={1} size="small">
-            <Descriptions.Item label="邮箱">{user.email}</Descriptions.Item>
+            <Descriptions.Item label="邮箱">{user.email ?? '未绑定'}</Descriptions.Item>
+            <Descriptions.Item label="手机号">{user.phone ?? '未绑定'}</Descriptions.Item>
             <Descriptions.Item label="显示名称">{user.displayName ?? '未设置'}</Descriptions.Item>
             <Descriptions.Item label="账号状态">
               <Tag color="green">正常</Tag>
             </Descriptions.Item>
             <Descriptions.Item label="邮箱验证">
-              {user.emailVerifiedAt ? (
+              {!user.email ? (
+                <Tag>未绑定邮箱</Tag>
+              ) : user.emailVerifiedAt ? (
                 <Tag color="blue">已验证</Tag>
               ) : (
                 <Space>

@@ -4,10 +4,10 @@ import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import { usePublicBranding } from './hooks';
 
 export const FALLBACK_BRANDING: PublicBranding = {
-  appName: 'Fastify Business',
-  primaryColor: '#1677ff',
-  loginTitle: '登录管理后台',
-  loginSubtitle: '使用部署管理员账号继续',
+  appName: 'Lingcoo Edu OMS',
+  primaryColor: '#3d5afe',
+  loginTitle: '登录 Lingcoo Edu OMS',
+  loginSubtitle: '使用你的邮箱或手机号继续',
   logoUrl: null,
   faviconUrl: null,
   revision: 0,

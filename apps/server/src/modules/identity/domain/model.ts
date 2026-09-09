@@ -3,7 +3,9 @@ export type IdentityActionPurpose = 'email_verification' | 'password_reset';
 
 export interface PublicIdentityUser {
   id: string;
-  email: string;
+  email: string | null;
+  phone: string | null;
+  mustChangePassword: boolean;
   displayName: string | null;
   status: IdentityUserStatus;
   emailVerifiedAt: Date | null;

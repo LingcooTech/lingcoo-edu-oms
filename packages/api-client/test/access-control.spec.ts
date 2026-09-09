@@ -4,6 +4,23 @@ import { createAccessControlApi } from '../src/access-control.js';
 import { createApiClient } from '../src/client.js';
 
 describe('access control api', () => {
+  it('sends an admin password reset with CSRF and the shared payload', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ accepted: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const api = createAccessControlApi(
+      createApiClient({ fetch, getCsrfToken: () => 'csrf-value' }),
+    );
+    await api.resetUserPassword('some-id', { newPassword: 'new-secure-password' });
+    expect(fetch.mock.calls[0]?.[0]).toBe('/api/access/users/some-id/password/reset');
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
+      newPassword: 'new-secure-password',
+    });
+    expect(new Headers(fetch.mock.calls[0]?.[1]?.headers).get('x-csrf-token')).toBe('csrf-value');
+  });
   it('encodes user filters and sends csrf for mutations', async () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()

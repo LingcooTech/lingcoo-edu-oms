@@ -90,7 +90,7 @@ export async function registerIdentityRoutes(
       const input = parse(loginRequestSchema, request.body);
       const result = await service.login(
         input,
-        auditContextFromRequest(request, { type: 'user', label: input.email }),
+        auditContextFromRequest(request, { type: 'user', label: input.identifier ?? input.email }),
       );
       reply.setCookie(environment.AUTH_COOKIE_NAME, result.sessionToken, cookieOptions(true));
       reply.setCookie(environment.AUTH_CSRF_COOKIE_NAME, result.csrfToken, cookieOptions(false));
@@ -98,6 +98,24 @@ export async function registerIdentityRoutes(
         user: serializeUser(result.user),
         session: { id: result.sessionId, expiresAt: result.expiresAt.toISOString() },
         csrfToken: result.csrfToken,
+      };
+    },
+  );
+
+  app.post(
+    '/api/auth/native/login',
+    { config: { access: { public: true } }, preHandler: loginRateLimit },
+    async (request) => {
+      const input = parse(loginRequestSchema, request.body);
+      const result = await service.login(
+        input,
+        auditContextFromRequest(request, { type: 'user', label: input.identifier ?? input.email }),
+      );
+      return {
+        user: serializeUser(result.user),
+        session: { id: result.sessionId, expiresAt: result.expiresAt.toISOString() },
+        csrfToken: result.csrfToken,
+        accessToken: result.sessionToken,
       };
     },
   );
@@ -122,7 +140,7 @@ export async function registerIdentityRoutes(
         auditContextFromRequest(request, {
           type: 'user',
           id: principal.user.id,
-          label: principal.user.displayName ?? principal.user.email,
+          label: principal.user.displayName ?? principal.user.email ?? principal.user.phone,
         }),
       );
       clearCookies(reply);
@@ -142,7 +160,7 @@ export async function registerIdentityRoutes(
         auditContextFromRequest(request, {
           type: 'user',
           id: principal.user.id,
-          label: principal.user.displayName ?? principal.user.email,
+          label: principal.user.displayName ?? principal.user.email ?? principal.user.phone,
         }),
       );
       clearCookies(reply);
@@ -187,7 +205,7 @@ export async function registerIdentityRoutes(
         auditContextFromRequest(request, {
           type: 'user',
           id: principal.user.id,
-          label: principal.user.displayName ?? principal.user.email,
+          label: principal.user.displayName ?? principal.user.email ?? principal.user.phone,
         }),
       );
     },
@@ -228,7 +246,7 @@ export async function registerIdentityRoutes(
         auditContextFromRequest(request, {
           type: 'user',
           id: principal.user.id,
-          label: principal.user.displayName ?? principal.user.email,
+          label: principal.user.displayName ?? principal.user.email ?? principal.user.phone,
         }),
       );
       return { accepted: true } as const;

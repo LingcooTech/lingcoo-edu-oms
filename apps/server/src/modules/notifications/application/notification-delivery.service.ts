@@ -17,6 +17,7 @@ import type { MailQueue } from '../../mail/public.js';
 import type {
   NotificationPreferenceResolver,
   NotificationPublisher,
+  NotificationRecipientDirectory,
   PublishNotificationInput,
 } from '../domain/model.js';
 import type { NotificationsRepository } from '../infrastructure/persistence/notifications.repository.js';
@@ -64,6 +65,7 @@ export class NotificationDeliveryService implements NotificationPublisher {
   constructor(
     private readonly database: DatabaseHandle,
     private readonly repository: NotificationsRepository,
+    private readonly recipients: NotificationRecipientDirectory,
     private readonly mail: MailQueue,
     private readonly preferences: NotificationPreferenceResolver,
     private readonly applicationName: string,
@@ -72,7 +74,7 @@ export class NotificationDeliveryService implements NotificationPublisher {
 
   async publish(input: PublishNotificationInput, transaction: DatabaseTransaction) {
     const parsed = publishInputSchema.parse(input);
-    const recipient = await this.repository.findRecipient(parsed.recipientUserId, transaction);
+    const recipient = await this.recipients.findById(parsed.recipientUserId, transaction);
     if (!recipient)
       throw new ApiError(404, 'NOTIFICATION_RECIPIENT_NOT_FOUND', '通知接收账号不存在');
     const resolution = await this.preferences.resolve({
@@ -82,10 +84,21 @@ export class NotificationDeliveryService implements NotificationPublisher {
       requestedChannels: parsed.channels,
     });
     const channels: NotificationChannel[] = ['in_app'];
-    if (parsed.channels.includes('email') && resolution.channels.includes('email')) {
+    if (
+      recipient.email &&
+      parsed.channels.includes('email') &&
+      resolution.channels.includes('email')
+    ) {
       channels.push('email');
     }
     const deduplicationHash = notificationDigest([parsed.recipientUserId, parsed.deduplicationKey]);
+    const metadata =
+      !recipient.email && parsed.channels.includes('email')
+        ? {
+            ...parsed.metadata,
+            emailDelivery: { status: 'skipped', reason: 'recipient_email_missing' },
+          }
+        : parsed.metadata;
     const contentHash = notificationDigest({
       recipientUserId: parsed.recipientUserId,
       category: parsed.category,
@@ -96,7 +109,7 @@ export class NotificationDeliveryService implements NotificationPublisher {
       ctaUrl: parsed.ctaUrl ?? null,
       sourceType: parsed.sourceType,
       sourceId: parsed.sourceId ?? null,
-      metadata: parsed.metadata,
+      metadata,
       channels,
       announcementId: parsed.announcementId ?? null,
     });
@@ -108,25 +121,26 @@ export class NotificationDeliveryService implements NotificationPublisher {
 
     const id = randomUUID();
     const emailRequested = channels.includes('email');
-    const mailDelivery = emailRequested
-      ? await this.mail.queue(
-          {
-            templateKey: 'notifications.generic',
-            to: recipient.email,
-            variables: {
-              applicationName: this.applicationName,
-              title: parsed.title,
-              body: parsed.body,
-              actionText:
-                parsed.ctaLabel && parsed.ctaUrl
-                  ? `${parsed.ctaLabel}：${parsed.ctaUrl}`
-                  : '此通知无需额外操作。',
+    const mailDelivery =
+      emailRequested && recipient.email
+        ? await this.mail.queue(
+            {
+              templateKey: 'notifications.generic',
+              to: recipient.email,
+              variables: {
+                applicationName: this.applicationName,
+                title: parsed.title,
+                body: parsed.body,
+                actionText:
+                  parsed.ctaLabel && parsed.ctaUrl
+                    ? `${parsed.ctaLabel}：${parsed.ctaUrl}`
+                    : '此通知无需额外操作。',
+              },
+              deduplicationKey: `notification:${deduplicationHash}:email`,
             },
-            deduplicationKey: `notification:${deduplicationHash}:email`,
-          },
-          transaction,
-        )
-      : null;
+            transaction,
+          )
+        : null;
     const inserted = await this.repository.insertNotification(
       {
         id,
@@ -141,7 +155,7 @@ export class NotificationDeliveryService implements NotificationPublisher {
         ctaUrl: parsed.ctaUrl ?? null,
         sourceType: parsed.sourceType,
         sourceId: parsed.sourceId ?? null,
-        metadata: parsed.metadata,
+        metadata,
         deduplicationHash,
         contentHash,
         emailRequested,

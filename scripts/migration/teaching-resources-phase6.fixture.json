@@ -1,0 +1,88 @@
+{
+  "campuses": [
+    { "id": "campus-b", "name": "南校区" },
+    { "id": "campus-a", "name": "总校区" }
+  ],
+  "classrooms": [
+    { "id": "room-a", "campusId": "campus-a", "name": "成长教室" },
+    { "id": "room-b", "campusId": "missing-campus", "name": "成长教室" }
+  ],
+  "courses": [
+    {
+      "id": "course-a",
+      "campusId": "campus-a",
+      "slug": "art",
+      "name": "美术",
+      "providerInstitutionId": "institution-a",
+      "defaultTeacherId": "teacher-a",
+      "classroomId": "room-a",
+      "status": "active"
+    },
+    {
+      "id": "course-b",
+      "campusId": "campus-b",
+      "slug": "art",
+      "name": "美术",
+      "providerInstitutionId": "institution-b",
+      "defaultTeacherId": "teacher-a",
+      "classroomId": "room-a",
+      "status": "draft"
+    }
+  ],
+  "classes": [
+    {
+      "id": "class-a",
+      "campusId": "campus-b",
+      "courseId": "course-a",
+      "teacherId": "teacher-a",
+      "classroomId": "room-a",
+      "name": "美术班",
+      "status": "active"
+    }
+  ],
+  "classEnrollments": [
+    {
+      "id": "enrollment-a",
+      "classId": "class-a",
+      "studentId": "student-a",
+      "billingCourseId": "course-a",
+      "billingCourseContractId": "contract-a",
+      "active": true
+    }
+  ],
+  "classSessions": [
+    {
+      "id": "session-a",
+      "classId": "class-a",
+      "courseId": "course-a",
+      "teacherId": "teacher-a",
+      "classroomId": "room-a",
+      "status": "scheduled"
+    },
+    {
+      "id": "session-b",
+      "classId": "class-a",
+      "courseId": "course-a",
+      "teacherId": "teacher-a",
+      "classroomId": "room-a",
+      "status": "completed"
+    }
+  ],
+  "classSessionStudents": [
+    {
+      "id": "session-student-a",
+      "classSessionId": "session-a",
+      "studentId": "student-a",
+      "billingCourseId": "course-a",
+      "billingCourseContractId": "contract-a",
+      "active": true
+    }
+  ],
+  "teachers": [
+    { "id": "teacher-a", "name": "王老师", "institutionId": "institution-a", "status": "active" }
+  ],
+  "institutions": [
+    { "id": "institution-a", "name": "合作机构 A", "status": "active" },
+    { "id": "institution-b", "name": "合作机构 B", "status": "active" }
+  ]
+}

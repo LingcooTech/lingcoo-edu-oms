@@ -1,0 +1,3 @@
+CREATE UNIQUE INDEX "teaching_sessions_id_institution_unique" ON "teaching_sessions" USING btree ("id","institution_id");--> statement-breakpoint
+ALTER TABLE "teaching_session_attendances" ADD CONSTRAINT "teaching_session_attendances_session_institution_fk" FOREIGN KEY ("session_id","institution_id") REFERENCES "public"."teaching_sessions"("id","institution_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "teaching_session_attendances" ADD CONSTRAINT "teaching_session_attendances_student_institution_fk" FOREIGN KEY ("student_id","institution_id") REFERENCES "public"."people_student_institutions"("student_id","institution_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint

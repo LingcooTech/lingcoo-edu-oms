@@ -37,7 +37,8 @@ child.stderr.on('data', (chunk) => {
 });
 
 async function waitForServer() {
-  const deadline = Date.now() + 10_000;
+  // Cold module loading can exceed ten seconds on constrained development machines.
+  const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
       throw new Error(

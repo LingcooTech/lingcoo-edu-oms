@@ -10,6 +10,9 @@ import { ForbiddenPage, NotFoundPage, UnauthorizedPage } from '../routes/error-p
 const DashboardPage = lazy(() =>
   import('../routes/dashboard-page').then((module) => ({ default: module.DashboardPage })),
 );
+const QuickActionsPage = lazy(() =>
+  import('../routes/dashboard-page').then((module) => ({ default: module.QuickActionsPage })),
+);
 const ShowcasePage = lazy(() =>
   import('../routes/showcase-page').then((module) => ({ default: module.ShowcasePage })),
 );
@@ -85,6 +88,51 @@ const BrandingPage = lazy(() =>
 const PaymentsPage = lazy(() =>
   import('../features/payments/PaymentsPage').then((module) => ({ default: module.PaymentsPage })),
 );
+const InstitutionsPage = lazy(() =>
+  import('../features/organization/InstitutionsPage').then((module) => ({
+    default: module.InstitutionsPage,
+  })),
+);
+const OrganizationSettingsPage = lazy(() =>
+  import('../features/organization/OrganizationSettingsPage').then((module) => ({
+    default: module.OrganizationSettingsPage,
+  })),
+);
+const StudentsPage = lazy(() =>
+  import('../features/people/StudentsPage').then((module) => ({
+    default: module.StudentsPage,
+  })),
+);
+const TeachersPage = lazy(() =>
+  import('../features/people/TeachersPage').then((module) => ({
+    default: module.TeachersPage,
+  })),
+);
+const TeachingResourcesPage = lazy(() =>
+  import('../features/teaching-resources/TeachingResourcesPage').then((module) => ({
+    default: module.TeachingResourcesPage,
+  })),
+);
+const SchedulePlansPage = lazy(() =>
+  import('../features/teaching-resources/SchedulePlansPage').then((module) => ({
+    default: module.SchedulePlansPage,
+  })),
+);
+const LessonPackagesPage = lazy(() =>
+  import('../features/lessons/LessonPackagesPage').then((module) => ({
+    default: module.LessonPackagesPage,
+  })),
+);
+const LessonAccountsPage = lazy(() =>
+  import('../features/lessons/LessonAccountsPage').then((module) => ({
+    default: module.LessonAccountsPage,
+  })),
+);
+const LessonSessionsPage = lazy(() =>
+  import('../features/sessions/LessonSessionsPage').then((module) => ({
+    default: module.LessonSessionsPage,
+  })),
+);
 
 function RouteLoading() {
   return (
@@ -105,9 +153,55 @@ export function AppRouter() {
         <Route element={<RequireSession />}>
           <Route element={<AdminShell />}>
             <Route index element={<DashboardPage />} />
+            <Route path="quick-actions" element={<QuickActionsPage />} />
             <Route path="showcase" element={<ShowcasePage />} />
             <Route path="account/security" element={<AccountSecurityPage />} />
             <Route path="account/sessions" element={<ActiveSessionsPage />} />
+            <Route element={<RequirePermission permissions={['education.institutions.read']} />}>
+              <Route path="organization" element={<OrganizationSettingsPage />} />
+              <Route path="institutions" element={<InstitutionsPage />} />
+            </Route>
+            <Route element={<RequirePermission permissions={['education.students.read']} />}>
+              <Route path="students" element={<StudentsPage />} />
+            </Route>
+            <Route element={<RequirePermission permissions={['education.teachers.read']} />}>
+              <Route path="teachers" element={<TeachersPage />} />
+            </Route>
+            <Route
+              element={<RequirePermission permissions={['education.teaching-resources.read']} />}
+            >
+              <Route path="campuses" element={<TeachingResourcesPage initialTab="campuses" />} />
+              <Route
+                path="classrooms"
+                element={<TeachingResourcesPage initialTab="classrooms" />}
+              />
+              <Route path="teaching-resources" element={<Navigate to="/courses" replace />} />
+            </Route>
+            <Route element={<RequirePermission permissions={['education.courses.read']} />}>
+              <Route path="courses" element={<TeachingResourcesPage initialTab="courses" />} />
+            </Route>
+            <Route element={<RequirePermission permissions={['education.classes.read']} />}>
+              <Route path="classes" element={<TeachingResourcesPage initialTab="classes" />} />
+            </Route>
+            <Route element={<RequirePermission permissions={['education.sessions.read']} />}>
+              <Route path="schedule-plans" element={<SchedulePlansPage />} />
+            </Route>
+            <Route element={<RequirePermission permissions={['education.sessions.read']} />}>
+              <Route path="lesson-sessions" element={<LessonSessionsPage mode="sessions" />} />
+            </Route>
+            <Route element={<RequirePermission permissions={['education.attendance.read']} />}>
+              <Route path="attendance" element={<LessonSessionsPage mode="attendance" />} />
+            </Route>
+            <Route element={<RequirePermission permissions={['education.lesson-packages.read']} />}>
+              <Route path="lesson-packages" element={<LessonPackagesPage />} />
+            </Route>
+            <Route element={<RequirePermission permissions={['education.lesson-balances.read']} />}>
+              <Route path="lesson-accounts" element={<LessonAccountsPage />} />
+              <Route
+                path="lesson-movements"
+                element={<LessonAccountsPage initialTab="movements" />}
+              />
+            </Route>
             <Route element={<RequirePermission permissions={['accounts.read']} />}>
               <Route path="access/users" element={<UsersPage />} />
             </Route>

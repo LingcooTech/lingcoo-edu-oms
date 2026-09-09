@@ -14,8 +14,10 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 
-import { identityUsers } from '../../../identity/public.js';
-import { jobs } from '../../../jobs/public.js';
+import {
+  identityUsersForeignKeyTarget,
+  jobsForeignKeyTarget,
+} from '../../../../database/foreign-key-targets.js';
 
 export const mailTemplateOverrides = pgTable(
   'mail_template_overrides',
@@ -24,7 +26,9 @@ export const mailTemplateOverrides = pgTable(
     subjectTemplate: varchar('subject_template', { length: 500 }).notNull(),
     textTemplate: text('text_template').notNull(),
     revision: integer('revision').notNull().default(1),
-    updatedBy: uuid('updated_by').references(() => identityUsers.id, { onDelete: 'set null' }),
+    updatedBy: uuid('updated_by').references(() => identityUsersForeignKeyTarget.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -38,7 +42,7 @@ export const mailDeliveries = pgTable(
   'mail_deliveries',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    jobId: uuid('job_id').references(() => jobs.id, { onDelete: 'set null' }),
+    jobId: uuid('job_id').references(() => jobsForeignKeyTarget.id, { onDelete: 'set null' }),
     templateKey: varchar('template_key', { length: 120 }).notNull(),
     templateVersion: integer('template_version').notNull(),
     templateRevision: integer('template_revision'),

@@ -13,5 +13,3 @@ export type {
   RecurringJobDefinition,
 } from './domain/model.js';
 export { createJobsModule, createJobsRunner, createJobsService } from './plugin.js';
-// Mail owns the cross-module foreign key and imports this table only through the public boundary.
-export { jobs } from './infrastructure/persistence/jobs.schema.js';

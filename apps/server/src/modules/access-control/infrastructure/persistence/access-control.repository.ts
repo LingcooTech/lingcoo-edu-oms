@@ -1,5 +1,9 @@
 import { and, asc, eq, inArray, notInArray } from 'drizzle-orm';
-import type { PermissionKey } from '@lingcoo-edu-oms/contracts';
+import {
+  educationAssignmentInputSchema,
+  type EducationAssignmentInput,
+  type PermissionKey,
+} from '@lingcoo-edu-oms/contracts';
 
 import type { DatabaseExecutor, DatabaseHandle } from '../../../../database/database.js';
 import type {
@@ -9,17 +13,63 @@ import type {
   PermissionDefinition,
 } from '../../domain/model.js';
 import { OWNER_ROLE_KEY } from '../../domain/system-permissions.js';
+import { EDUCATION_ROLE_DEFAULTS } from '../../domain/education-permissions.js';
 import {
   accessPermissions,
   accessRolePermissions,
   accessRoles,
   accessUserRoles,
+  accessEducationAssignments,
 } from './access-control.schema.js';
 
 type RoleRecord = typeof accessRoles.$inferSelect;
 
 export class AccessControlRepository {
   constructor(private readonly database: DatabaseHandle) {}
+
+  async synchronizeEducationRoles(): Promise<void> {
+    await this.database.transaction(async (executor) => {
+      for (const definition of EDUCATION_ROLE_DEFAULTS) {
+        const [role] = await executor
+          .insert(accessRoles)
+          .values({
+            key: definition.key,
+            name: definition.name,
+            system: true,
+            description: '教务内置角色；数据访问必须通过机构及档案范围校验。',
+          })
+          .onConflictDoNothing()
+          .returning({ id: accessRoles.id });
+        // Existing roles and grants are never broadened during synchronization.
+        if (role) await this.insertRolePermissions(executor, role.id, definition.permissions);
+      }
+    });
+  }
+
+  async educationAssignments(
+    userId: string,
+    executor: DatabaseExecutor = this.database.db,
+  ): Promise<EducationAssignmentInput[]> {
+    const rows = await executor
+      .select()
+      .from(accessEducationAssignments)
+      .where(eq(accessEducationAssignments.userId, userId));
+    return rows.map((row) => educationAssignmentInputSchema.parse(row));
+  }
+
+  async replaceEducationAssignments(
+    userId: string,
+    assignments: EducationAssignmentInput[],
+    executor: DatabaseExecutor,
+  ): Promise<void> {
+    await executor
+      .delete(accessEducationAssignments)
+      .where(eq(accessEducationAssignments.userId, userId));
+    if (assignments.length)
+      await executor
+        .insert(accessEducationAssignments)
+        .values(assignments.map((assignment) => ({ ...assignment, userId })));
+  }
 
   async synchronizeCatalog(source: string, definitions: PermissionDefinition[]): Promise<void> {
     await this.database.transaction(async (transaction) => {

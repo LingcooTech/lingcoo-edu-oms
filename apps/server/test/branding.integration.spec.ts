@@ -166,8 +166,8 @@ suite('branding PostgreSQL integration', () => {
     expect(publicResponse.json()).toEqual({
       appName: 'Branding Integration',
       primaryColor: '#1677ff',
-      loginTitle: '登录管理后台',
-      loginSubtitle: '使用部署管理员账号继续',
+      loginTitle: '登录 Lingcoo Edu OMS',
+      loginSubtitle: '使用邮箱或手机号登录',
       logoUrl: null,
       faviconUrl: null,
       revision: 0,

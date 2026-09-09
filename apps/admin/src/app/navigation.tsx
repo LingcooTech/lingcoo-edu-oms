@@ -1,20 +1,24 @@
 import {
-  AppstoreOutlined,
+  AccountBookOutlined,
+  ApartmentOutlined,
+  BankOutlined,
+  BookOutlined,
+  CalendarOutlined,
+  CheckSquareOutlined,
+  ContactsOutlined,
   DashboardOutlined,
-  SafetyCertificateOutlined,
-  LaptopOutlined,
-  TeamOutlined,
-  UserOutlined,
   FileSearchOutlined,
+  LaptopOutlined,
+  MobileOutlined,
+  ReadOutlined,
+  ScheduleOutlined,
+  SafetyCertificateOutlined,
   SettingOutlined,
-  HistoryOutlined,
-  FieldTimeOutlined,
-  SwapOutlined,
-  MailOutlined,
-  NotificationOutlined,
-  PictureOutlined,
-  BgColorsOutlined,
-  DollarOutlined,
+  SolutionOutlined,
+  TeamOutlined,
+  ThunderboltOutlined,
+  UserOutlined,
+  WalletOutlined,
 } from '@ant-design/icons';
 import type { PermissionKey } from '@lingcoo-edu-oms/contracts';
 import type { ReactNode } from 'react';
@@ -25,23 +29,185 @@ export interface AdminNavigationItem {
   path: string;
   icon?: ReactNode;
   permission?: PermissionKey;
-  group: 'workspace' | 'organization' | 'operations' | 'configuration' | 'account';
+  disabled?: boolean;
+  section:
+    'overview' | 'resources' | 'admissions' | 'academic' | 'ledger' | 'miniProgram' | 'system';
 }
+
+export interface AdminNavigationSection {
+  key: AdminNavigationItem['section'];
+  label: string;
+  icon: ReactNode;
+}
+
+export const navigationSections: AdminNavigationSection[] = [
+  { key: 'overview', label: '业务概览', icon: <DashboardOutlined /> },
+  { key: 'resources', label: '教学资源', icon: <ReadOutlined /> },
+  { key: 'admissions', label: '招生转化', icon: <ContactsOutlined /> },
+  { key: 'academic', label: '教务管理', icon: <CalendarOutlined /> },
+  { key: 'ledger', label: '课时账本', icon: <AccountBookOutlined /> },
+  { key: 'miniProgram', label: '小程序设置', icon: <MobileOutlined /> },
+  { key: 'system', label: '系统设置', icon: <SettingOutlined /> },
+];
 
 export const foundationNavigation: AdminNavigationItem[] = [
   {
     key: 'dashboard',
-    label: '工作台',
+    label: '经营看板',
     path: '/',
     icon: <DashboardOutlined />,
-    group: 'workspace',
+    section: 'overview',
   },
   {
-    key: 'showcase',
-    label: '组件示例',
-    path: '/showcase',
-    icon: <AppstoreOutlined />,
-    group: 'workspace',
+    key: 'quick-actions',
+    label: '快捷操作',
+    path: '/quick-actions',
+    icon: <ThunderboltOutlined />,
+    section: 'overview',
+  },
+  {
+    key: 'organization-settings',
+    label: '组织设置',
+    path: '/organization',
+    icon: <SettingOutlined />,
+    permission: 'education.institutions.read',
+    section: 'resources',
+  },
+  {
+    key: 'institutions',
+    label: '机构管理',
+    path: '/institutions',
+    icon: <BankOutlined />,
+    permission: 'education.institutions.read',
+    section: 'resources',
+  },
+  {
+    key: 'campuses',
+    label: '校区管理',
+    path: '/campuses',
+    icon: <BookOutlined />,
+    permission: 'education.teaching-resources.read',
+    section: 'resources',
+  },
+  {
+    key: 'classrooms',
+    label: '教室管理',
+    path: '/classrooms',
+    icon: <ApartmentOutlined />,
+    permission: 'education.teaching-resources.read',
+    section: 'resources',
+  },
+  {
+    key: 'courses',
+    label: '课程管理',
+    path: '/courses',
+    icon: <BookOutlined />,
+    permission: 'education.courses.read',
+    section: 'resources',
+  },
+  {
+    key: 'teachers',
+    label: '教师档案',
+    path: '/teachers',
+    icon: <SolutionOutlined />,
+    permission: 'education.teachers.read',
+    section: 'resources',
+  },
+  {
+    key: 'admissions-planned',
+    label: '线索 / 试听 / 营销（后续）',
+    path: '/admissions',
+    icon: <ContactsOutlined />,
+    disabled: true,
+    section: 'admissions',
+  },
+  {
+    key: 'students',
+    label: '学员档案',
+    path: '/students',
+    icon: <TeamOutlined />,
+    permission: 'education.students.read',
+    section: 'academic',
+  },
+  {
+    key: 'classes',
+    label: '班级管理',
+    path: '/classes',
+    icon: <TeamOutlined />,
+    permission: 'education.classes.read',
+    section: 'academic',
+  },
+  {
+    key: 'schedule-plans',
+    label: '排课计划',
+    path: '/schedule-plans',
+    icon: <ScheduleOutlined />,
+    permission: 'education.sessions.read',
+    section: 'academic',
+  },
+  {
+    key: 'lesson-sessions',
+    label: '课次管理',
+    path: '/lesson-sessions',
+    icon: <CalendarOutlined />,
+    permission: 'education.sessions.read',
+    section: 'academic',
+  },
+  {
+    key: 'lesson-attendance',
+    label: '签到消课',
+    path: '/attendance',
+    icon: <CheckSquareOutlined />,
+    permission: 'education.attendance.read',
+    section: 'academic',
+  },
+  {
+    key: 'lesson-packages',
+    label: '课时商品 / 课时包',
+    path: '/lesson-packages',
+    icon: <AccountBookOutlined />,
+    permission: 'education.lesson-packages.read',
+    section: 'ledger',
+  },
+  {
+    key: 'lesson-accounts',
+    label: '课时账户',
+    path: '/lesson-accounts',
+    icon: <WalletOutlined />,
+    permission: 'education.lesson-balances.read',
+    section: 'ledger',
+  },
+  {
+    key: 'lesson-movements',
+    label: '课时流水',
+    path: '/lesson-movements',
+    icon: <FileSearchOutlined />,
+    permission: 'education.lesson-balances.read',
+    section: 'ledger',
+  },
+  {
+    key: 'orders-planned',
+    label: '订单与收款（后续）',
+    path: '/orders',
+    icon: <AccountBookOutlined />,
+    disabled: true,
+    section: 'ledger',
+  },
+  {
+    key: 'lesson-metrics-planned',
+    label: '课时经营数据（后续）',
+    path: '/lesson-metrics',
+    icon: <DashboardOutlined />,
+    disabled: true,
+    section: 'ledger',
+  },
+  {
+    key: 'mini-program-planned',
+    label: '功能规划中',
+    path: '/mini-program',
+    icon: <MobileOutlined />,
+    disabled: true,
+    section: 'miniProgram',
   },
   {
     key: 'access-users',
@@ -49,7 +215,7 @@ export const foundationNavigation: AdminNavigationItem[] = [
     path: '/access/users',
     icon: <UserOutlined />,
     permission: 'accounts.read',
-    group: 'organization',
+    section: 'system',
   },
   {
     key: 'access-roles',
@@ -57,7 +223,7 @@ export const foundationNavigation: AdminNavigationItem[] = [
     path: '/access/roles',
     icon: <TeamOutlined />,
     permission: 'roles.read',
-    group: 'organization',
+    section: 'system',
   },
   {
     key: 'audit',
@@ -65,106 +231,35 @@ export const foundationNavigation: AdminNavigationItem[] = [
     path: '/audit',
     icon: <FileSearchOutlined />,
     permission: 'audit.read',
-    group: 'organization',
-  },
-  {
-    key: 'settings',
-    label: '系统设置',
-    path: '/settings',
-    icon: <SettingOutlined />,
-    permission: 'settings.read',
-    group: 'configuration',
-  },
-  {
-    key: 'idempotency',
-    label: '幂等诊断',
-    path: '/idempotency',
-    icon: <HistoryOutlined />,
-    permission: 'idempotency.read',
-    group: 'operations',
-  },
-  {
-    key: 'jobs',
-    label: '后台任务',
-    path: '/jobs',
-    icon: <FieldTimeOutlined />,
-    permission: 'jobs.read',
-    group: 'operations',
-  },
-  {
-    key: 'outbox',
-    label: 'Outbox 事件',
-    path: '/outbox',
-    icon: <SwapOutlined />,
-    permission: 'outbox.read',
-    group: 'operations',
-  },
-  {
-    key: 'mail',
-    label: '邮件服务',
-    path: '/mail',
-    icon: <MailOutlined />,
-    permission: 'mail.read',
-    group: 'operations',
-  },
-  {
-    key: 'storage',
-    label: '素材库',
-    path: '/storage',
-    icon: <PictureOutlined />,
-    permission: 'storage.read',
-    group: 'configuration',
-  },
-  {
-    key: 'branding',
-    label: '应用品牌',
-    path: '/branding',
-    icon: <BgColorsOutlined />,
-    permission: 'branding.read',
-    group: 'configuration',
-  },
-  {
-    key: 'notifications',
-    label: '通知中心',
-    path: '/notifications',
-    icon: <NotificationOutlined />,
-    group: 'operations',
-  },
-  {
-    key: 'payments',
-    label: '支付与对账',
-    path: '/payments',
-    icon: <DollarOutlined />,
-    permission: 'payments.read',
-    group: 'operations',
+    section: 'system',
   },
   {
     key: 'account-security',
     label: '账号安全',
     path: '/account/security',
     icon: <SafetyCertificateOutlined />,
-    group: 'account',
+    section: 'system',
   },
   {
     key: 'active-sessions',
     label: '活动会话',
     path: '/account/sessions',
     icon: <LaptopOutlined />,
-    group: 'account',
+    section: 'system',
   },
 ];
-
-export const navigationGroups = [
-  { key: 'workspace', label: '工作空间' },
-  { key: 'organization', label: '组织与安全' },
-  { key: 'operations', label: '业务运营' },
-  { key: 'configuration', label: '内容与配置' },
-  { key: 'account', label: '个人中心' },
-] as const satisfies ReadonlyArray<{ key: AdminNavigationItem['group']; label: string }>;
 
 export function selectedNavigationKey(pathname: string): string {
   const matched = foundationNavigation.find((item) =>
     item.path === '/' ? pathname === '/' : pathname.startsWith(item.path),
   );
   return matched?.key ?? '';
+}
+
+export function selectedNavigationSection(pathname: string): AdminNavigationItem['section'] {
+  return (
+    foundationNavigation.find((item) =>
+      item.path === '/' ? pathname === '/' : pathname.startsWith(item.path),
+    )?.section ?? 'overview'
+  );
 }

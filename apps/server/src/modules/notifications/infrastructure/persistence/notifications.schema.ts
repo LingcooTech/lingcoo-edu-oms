@@ -17,8 +17,10 @@ import {
 
 import type { NotificationChannel } from '@lingcoo-edu-oms/contracts';
 
-import { identityUsers } from '../../../identity/public.js';
-import { jobs } from '../../../jobs/public.js';
+import {
+  identityUsersForeignKeyTarget,
+  jobsForeignKeyTarget,
+} from '../../../../database/foreign-key-targets.js';
 
 export const notificationAnnouncements = pgTable(
   'notification_announcements',
@@ -37,9 +39,15 @@ export const notificationAnnouncements = pgTable(
     recipientCount: integer('recipient_count').notNull().default(0),
     deliveredCount: integer('delivered_count').notNull().default(0),
     revision: integer('revision').notNull().default(1),
-    publishJobId: uuid('publish_job_id').references(() => jobs.id, { onDelete: 'set null' }),
-    createdBy: uuid('created_by').references(() => identityUsers.id, { onDelete: 'set null' }),
-    updatedBy: uuid('updated_by').references(() => identityUsers.id, { onDelete: 'set null' }),
+    publishJobId: uuid('publish_job_id').references(() => jobsForeignKeyTarget.id, {
+      onDelete: 'set null',
+    }),
+    createdBy: uuid('created_by').references(() => identityUsersForeignKeyTarget.id, {
+      onDelete: 'set null',
+    }),
+    updatedBy: uuid('updated_by').references(() => identityUsersForeignKeyTarget.id, {
+      onDelete: 'set null',
+    }),
     publishedAt: timestamp('published_at', { withTimezone: true }),
     withdrawnAt: timestamp('withdrawn_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -85,7 +93,7 @@ export const notifications = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     recipientUserId: uuid('recipient_user_id')
       .notNull()
-      .references(() => identityUsers.id, { onDelete: 'cascade' }),
+      .references(() => identityUsersForeignKeyTarget.id, { onDelete: 'cascade' }),
     announcementId: uuid('announcement_id').references(() => notificationAnnouncements.id, {
       onDelete: 'restrict',
     }),
@@ -141,7 +149,7 @@ export const notificationAnnouncementTargets = pgTable(
       .references(() => notificationAnnouncements.id, { onDelete: 'cascade' }),
     recipientUserId: uuid('recipient_user_id')
       .notNull()
-      .references(() => identityUsers.id, { onDelete: 'cascade' }),
+      .references(() => identityUsersForeignKeyTarget.id, { onDelete: 'cascade' }),
     notificationId: uuid('notification_id').references(() => notifications.id, {
       onDelete: 'cascade',
     }),

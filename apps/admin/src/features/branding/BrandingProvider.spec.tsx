@@ -52,6 +52,6 @@ describe('BrandingProvider', () => {
         <Consumer />
       </BrandingProvider>,
     );
-    expect(screen.getByText('Fastify Business')).toBeInTheDocument();
+    expect(screen.getByText('Lingcoo Edu OMS')).toBeInTheDocument();
   });
 });

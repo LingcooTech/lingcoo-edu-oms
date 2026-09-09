@@ -87,9 +87,15 @@ suite('access control integration', () => {
       headers: { cookie: ownerCookies.cookie },
     });
     expect(roles.statusCode).toBe(200);
-    expect(roles.json().items).toEqual([
-      expect.objectContaining({ key: 'system.owner', system: true, userCount: 1 }),
-    ]);
+    expect(roles.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'system.owner', system: true, userCount: 1 }),
+        ...['admin', 'institution_admin', 'teacher', 'parent'].map((key) =>
+          expect.objectContaining({ key, system: true }),
+        ),
+      ]),
+    );
+    expect(roles.json().items).toHaveLength(5);
 
     const permissions = await app.inject({
       method: 'GET',

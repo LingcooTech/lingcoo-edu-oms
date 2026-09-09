@@ -43,6 +43,25 @@ import {
   createPaymentsService,
   PAYMENT_SETTINGS,
 } from './payments/public.js';
+import { createOrganizationModule, createOrganizationService } from './organization/public.js';
+import { createPeopleModule, createPeopleService } from './people/public.js';
+import {
+  createLessonProductsModule,
+  createLessonProductsService,
+} from './lesson-products/public.js';
+import {
+  createLessonAccountProvisioner,
+  createLessonAccountsModule,
+  createLessonAccountsService,
+} from './lesson-accounts/public.js';
+import {
+  createLessonSessionsModule,
+  createLessonSessionsService,
+} from './lesson-sessions/public.js';
+import {
+  createTeachingResourcesModule,
+  createTeachingResourcesService,
+} from './teaching-resources/public.js';
 
 export interface ApplicationModuleDependencies {
   environment: AppEnvironment;
@@ -77,10 +96,16 @@ export async function registerApplicationModules(
   jobs.registry.register(mail.sendJobHandler);
   jobs.registry.register(mail.cleanupJobHandler);
   jobs.recurring.register(mail.recurringJob);
+  const identity = createIdentityService({
+    ...dependencies,
+    audit,
+    actionDelivery: mail.actionDelivery,
+  });
   const notifications = createNotificationsService({
     ...dependencies,
     jobs: jobs.service,
     mail: mail.service,
+    identity,
     audit,
   });
   jobs.registry.register(notifications.publishAnnouncementJobHandler);
@@ -107,16 +132,60 @@ export async function registerApplicationModules(
   jobs.recurring.register(storage.maintenance.recurringJob);
   settings.registry.registerConnectionTester(createSmtpConnectionTester(settings.service));
   settings.registry.registerConnectionTester(createStorageConnectionTester(storage.providers));
-  const identity = createIdentityService({
-    ...dependencies,
+  const organization = createOrganizationService({ database: dependencies.database, audit });
+  const lessonAccountProvisioner = createLessonAccountProvisioner({
+    database: dependencies.database,
     audit,
-    actionDelivery: mail.actionDelivery,
   });
-  const access = createAccessControlService({ database: dependencies.database, identity, audit });
+  const people = createPeopleService({
+    database: dependencies.database,
+    institutions: organization,
+    identity,
+    audit,
+    lessonAccounts: lessonAccountProvisioner,
+  });
+  const lessonProducts = createLessonProductsService({
+    database: dependencies.database,
+    institutions: organization,
+    audit,
+  });
   const outbox = createOutboxService({
     database: dependencies.database,
     audit,
     events: applicationOutboxEvents,
+  });
+  const lessonAccounts = createLessonAccountsService({
+    database: dependencies.database,
+    institutions: organization,
+    students: people,
+    packages: lessonProducts,
+    idempotency,
+    audit,
+    outbox: outbox.service,
+  });
+  const lessonSessions = createLessonSessionsService({
+    database: dependencies.database,
+    institutions: organization,
+    students: people,
+    teachers: people,
+    lessonAccounts,
+    idempotency,
+    audit,
+  });
+  const teachingResources = createTeachingResourcesService({
+    database: dependencies.database,
+    institutions: organization,
+    students: people,
+    teachers: people,
+    sessions: lessonSessions,
+    audit,
+  });
+  lessonSessions.setResourceConflictPolicy(teachingResources);
+  const access = createAccessControlService({
+    database: dependencies.database,
+    identity,
+    audit,
+    educationDirectory: people,
   });
   installAccessControlGuard(app, { environment: dependencies.environment, identity, access });
   await app.register(createHealthModule(dependencies));
@@ -127,6 +196,67 @@ export async function registerApplicationModules(
       identity,
       audit,
       service: access,
+    }),
+  );
+  await app.register(
+    createOrganizationModule({
+      database: dependencies.database,
+      access,
+      audit,
+      service: organization,
+    }),
+  );
+  await app.register(
+    createPeopleModule({
+      database: dependencies.database,
+      institutions: organization,
+      identity,
+      audit,
+      lessonAccounts: lessonAccountProvisioner,
+      service: people,
+    }),
+  );
+  await app.register(
+    createLessonProductsModule({
+      database: dependencies.database,
+      institutions: organization,
+      audit,
+      service: lessonProducts,
+    }),
+  );
+  await app.register(
+    createLessonAccountsModule({
+      database: dependencies.database,
+      institutions: organization,
+      students: people,
+      packages: lessonProducts,
+      idempotency,
+      audit,
+      outbox: outbox.service,
+      service: lessonAccounts,
+    }),
+  );
+  await app.register(
+    createLessonSessionsModule({
+      database: dependencies.database,
+      institutions: organization,
+      students: people,
+      teachers: people,
+      lessonAccounts,
+      idempotency,
+      audit,
+      service: lessonSessions,
+    }),
+  );
+  await app.register(
+    createTeachingResourcesModule({
+      database: dependencies.database,
+      institutions: organization,
+      students: people,
+      teachers: people,
+      sessions: lessonSessions,
+      audit,
+      service: teachingResources,
     }),
   );
   await app.register(createAuditModule({ database: dependencies.database, service: audit }));
@@ -167,6 +297,7 @@ export async function registerApplicationModules(
       ...dependencies,
       jobs: jobs.service,
       mail: mail.service,
+      identity,
       audit,
       service: notifications.service,
     }),

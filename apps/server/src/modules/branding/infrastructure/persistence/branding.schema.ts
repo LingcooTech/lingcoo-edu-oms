@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { check, integer, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 
-import { identityUsers } from '../../../identity/public.js';
+import { identityUsersForeignKeyTarget } from '../../../../database/foreign-key-targets.js';
 
 export const applicationBranding = pgTable(
   'application_branding',
@@ -12,7 +12,9 @@ export const applicationBranding = pgTable(
     loginTitle: varchar('login_title', { length: 120 }).notNull(),
     loginSubtitle: varchar('login_subtitle', { length: 240 }).notNull(),
     revision: integer('revision').notNull().default(1),
-    updatedBy: uuid('updated_by').references(() => identityUsers.id, { onDelete: 'set null' }),
+    updatedBy: uuid('updated_by').references(() => identityUsersForeignKeyTarget.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

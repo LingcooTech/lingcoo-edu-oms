@@ -1,6 +1,7 @@
 import {
   acceptedActionSchema,
   identitySessionListSchema,
+  nativeSessionIdentitySchema,
   sessionIdentitySchema,
   type ChangePasswordRequest,
   type ConfirmPasswordReset,
@@ -18,6 +19,14 @@ export function createIdentityApi(client: ApiClient) {
         path: '/api/auth/login',
         body: input,
         schema: sessionIdentitySchema,
+      });
+    },
+    nativeLogin(input: LoginRequest) {
+      return client.request({
+        method: 'POST',
+        path: '/api/auth/native/login',
+        body: input,
+        schema: nativeSessionIdentitySchema,
       });
     },
     async getSession() {

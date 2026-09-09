@@ -1,0 +1,2 @@
+ALTER TABLE "people_student_guardians" ALTER COLUMN "verification_status" SET DEFAULT 'unverified';--> statement-breakpoint
+ALTER TABLE "people_student_guardians" ALTER COLUMN "verification_source" SET DEFAULT 'legacy_import';

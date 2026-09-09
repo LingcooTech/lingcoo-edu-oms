@@ -13,7 +13,7 @@ import {
 } from '../src/modules/access-control/infrastructure/persistence/access-control.schema.js';
 import { createAuditService } from '../src/modules/audit/public.js';
 import { auditEvents } from '../src/modules/audit/infrastructure/persistence/audit.schema.js';
-import { createIdentityService } from '../src/modules/identity/public.js';
+import { createIdentityService, type IdentityService } from '../src/modules/identity/public.js';
 import {
   identityActionTokens,
   identityPasswordCredentials,
@@ -55,8 +55,9 @@ suite('notifications PostgreSQL integration', () => {
   let database: DatabaseHandle;
   let environment: AppEnvironment;
   let app: Awaited<ReturnType<typeof buildApp>>;
-  let owner: { id: string; email: string };
-  let member: { id: string; email: string };
+  let identity: IdentityService;
+  let owner: { id: string; email: string | null };
+  let member: { id: string; email: string | null };
   let ownerCookies: ReturnType<typeof cookies>;
   let memberCookies: ReturnType<typeof cookies>;
 
@@ -73,7 +74,7 @@ suite('notifications PostgreSQL integration', () => {
     });
     database = createDatabase(environment.DATABASE_URL);
     await cleanup();
-    const identity = createIdentityService({ database, environment });
+    identity = createIdentityService({ database, environment });
     const access = createAccessControlService({ database, identity });
     await access.synchronizeSystemAccess();
     owner = await identity.ensureBootstrapUser(
@@ -86,8 +87,8 @@ suite('notifications PostgreSQL integration', () => {
     );
     await access.assignOwner(owner.id);
     app = await buildApp({ environment, database });
-    ownerCookies = await login(owner.email, 'owner-secure-password');
-    memberCookies = await login(member.email, 'member-secure-password');
+    ownerCookies = await login(owner.email!, 'owner-secure-password');
+    memberCookies = await login(member.email!, 'member-secure-password');
   });
 
   beforeEach(async () => {
@@ -160,6 +161,7 @@ suite('notifications PostgreSQL integration', () => {
       environment,
       jobs: jobRuntime.service,
       mail: mail.service,
+      identity,
       audit,
     });
     jobRuntime.registry.register(notificationRuntime.publishAnnouncementJobHandler);
@@ -231,6 +233,44 @@ suite('notifications PostgreSQL integration', () => {
       ),
     ).rejects.toThrow('通知业务元数据不能超过 16 KiB');
     expect(await database.db.select().from(notifications)).toHaveLength(1);
+  });
+
+  it('keeps phone-only recipients on the in-app channel and records why email was skipped', async () => {
+    const recipient = await identity.createUser({
+      phone: '13900139000',
+      password: 'phone-recipient-password',
+    });
+    const result = await database.transaction((transaction) =>
+      runtime().notifications.publish(
+        {
+          recipientUserId: recipient.id,
+          category: 'account.security',
+          title: '账号安全提醒',
+          body: '请及时检查账号安全设置。',
+          sourceType: 'identity',
+          sourceId: recipient.id,
+          deduplicationKey: 'phone-only-recipient-security-1',
+          channels: ['in_app', 'email'],
+        },
+        transaction,
+      ),
+    );
+
+    expect(result.mailDeliveryId).toBeNull();
+    const [stored] = await database.db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.id, result.id));
+    expect(stored).toMatchObject({
+      recipientUserId: recipient.id,
+      emailRequested: false,
+      mailDeliveryId: null,
+      metadata: {
+        emailDelivery: { status: 'skipped', reason: 'recipient_email_missing' },
+      },
+    });
+    expect(await database.db.select().from(mailDeliveries)).toHaveLength(0);
+    await database.db.delete(identityUsers).where(eq(identityUsers.id, recipient.id));
   });
 
   it('keeps unread counts exact and enforces recipient ownership and state transitions', async () => {

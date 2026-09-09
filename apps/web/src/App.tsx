@@ -1,26 +1,35 @@
-const capabilities = [
+const adminUrl = import.meta.env.VITE_ADMIN_URL ?? '/admin/';
+
+const migrationScope = [
   {
     number: '01',
-    title: '可靠底座',
-    description: 'Fastify、PostgreSQL 与模块化事务边界已经就绪。',
+    title: '账号迁移',
+    description: '管理员可使用邮箱或手机号登录，原有邮箱登录方式继续支持。',
   },
-  { number: '02', title: '安全默认', description: 'Session、CSRF、权限和审计能力从第一天启用。' },
-  { number: '03', title: '持续交付', description: '测试、Docker 与 CI 门禁共同保护每一次发布。' },
+  {
+    number: '02',
+    title: '访问治理',
+    description: '沿用角色与权限边界，管理运营账号的启用状态和职责。',
+  },
+  {
+    number: '03',
+    title: '凭据保护',
+    description: '新建和重置后的临时密码，需要在首次登录时完成更新。',
+  },
 ];
 
 export function App() {
   return (
     <main className="site-shell">
       <nav className="site-nav" aria-label="主导航">
-        <a className="site-brand" href="#top" aria-label="Fastify Business 首页">
-          <span>FB</span>
-          <strong>Fastify Business</strong>
+        <a className="site-brand" href="#top" aria-label="Lingcoo Edu OMS 首页">
+          <span>LE</span>
+          <strong>Lingcoo Edu OMS</strong>
         </a>
         <div className="site-nav__links">
-          <a href="#capabilities">能力</a>
-          <a href="/admin/">管理后台</a>
-          <a className="site-nav__button" href="#start">
-            开始构建
+          <a href="#phase-one">迁移一期</a>
+          <a className="site-nav__button" href={adminUrl}>
+            管理后台
           </a>
         </div>
       </nav>
@@ -28,103 +37,95 @@ export function App() {
       <section className="site-hero" id="top">
         <div className="site-hero__copy">
           <span className="site-eyebrow">
-            <i /> Production-ready TypeScript Starter
+            <i /> Education OMS · Migration Phase 1
           </span>
           <h1>
-            把复杂留给底座，
+            为教育运营，
             <br />
-            <em>把创造留给业务。</em>
+            <em>先建立可信入口。</em>
           </h1>
-          <p>一套清晰、可靠、可持续演进的业务应用起点。无需重复搭建认证、权限、任务与交付体系。</p>
-          <div className="site-actions" id="start">
-            <a className="site-action site-action--primary" href="/admin/">
-              查看管理后台 <span>↗</span>
+          <p>
+            Lingcoo Edu OMS
+            正在迁移。第一期聚焦运营管理员身份：登录方式、账号管理、角色权限与密码安全。
+          </p>
+          <div className="site-actions">
+            <a className="site-action site-action--primary" href={adminUrl}>
+              进入管理后台 <span>↗</span>
             </a>
-            <a className="site-action site-action--secondary" href="#capabilities">
-              了解基础能力
+            <a className="site-action site-action--secondary" href="#phase-one">
+              查看本期范围
             </a>
-          </div>
-          <div className="site-proof">
-            <span>
-              <b>12</b> 通用模块
-            </span>
-            <span>
-              <b>2</b> 独立应用入口
-            </span>
-            <span>
-              <b>1</b> 条完整交付链路
-            </span>
           </div>
         </div>
 
-        <div className="site-preview" aria-label="后台界面预览">
+        <div className="site-preview" aria-label="教育 OMS 迁移一期概览">
           <div className="site-preview__bar">
             <div>
               <i />
               <i />
               <i />
             </div>
-            <span>Business Console</span>
-            <small>● Online</small>
+            <span>Lingcoo Edu OMS</span>
+            <small>Migration phase 1</small>
           </div>
           <div className="site-preview__body">
             <aside>
-              <span className="site-preview__logo">FB</span>
-              {[0, 1, 2, 3, 4].map((item) => (
+              <span className="site-preview__logo">LE</span>
+              {[0, 1, 2, 3].map((item) => (
                 <i key={item} className={item === 0 ? 'is-active' : ''} />
               ))}
             </aside>
             <div className="site-preview__content">
               <header>
-                <span>工作台</span>
+                <span>迁移工作台</span>
                 <i />
               </header>
               <div className="site-preview__welcome">
-                <small>PRODUCTION READY</small>
-                <strong>欢迎回来</strong>
-                <span>专注构建真正重要的业务。</span>
+                <small>PHASE 1 · IDENTITY MIGRATION</small>
+                <strong>安全接入运营团队</strong>
+                <span>仅展示本期已接入的身份与访问能力。</span>
               </div>
               <div className="site-preview__metrics">
-                {['服务正常', '12 项能力', '安全基线'].map((item, index) => (
+                {['邮箱或手机号登录', '账号与角色', '首次修改密码'].map((item, index) => (
                   <div key={item}>
                     <i className={`tone-${index}`} />
                     <span>{item}</span>
-                    <b>{index === 0 ? '●' : '✓'}</b>
+                    <b>✓</b>
                   </div>
                 ))}
               </div>
-              <div className="site-preview__panels">
-                <div />
-                <div />
+              <div className="site-preview__notice">
+                <span>后续接入</span>
+                <strong>学员、教学内容与订单</strong>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="site-capabilities" id="capabilities">
+      <section className="site-capabilities" id="phase-one">
         <div className="site-section-heading">
-          <span>Built for real business</span>
+          <span>Migration scope</span>
           <h2>
-            不是空白脚手架，
+            本期只做已经就绪的事，
             <br />
-            而是经过验证的起点。
+            清晰地为后续迁移留出空间。
           </h2>
         </div>
         <div className="site-capability-grid">
-          {capabilities.map((capability) => (
-            <article key={capability.number}>
-              <span>{capability.number}</span>
-              <h3>{capability.title}</h3>
-              <p>{capability.description}</p>
+          {migrationScope.map((item) => (
+            <article key={item.number}>
+              <span>{item.number}</span>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
             </article>
           ))}
         </div>
       </section>
 
       <footer className="site-footer">
-        <span>Fastify Business Starter</span>
-        <small>为下一套业务系统准备。</small>
+        <span>Lingcoo Edu OMS</span>
+        <small>教育运营系统迁移一期</small>
       </footer>
     </main>
   );

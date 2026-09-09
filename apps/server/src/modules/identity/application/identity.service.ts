@@ -1,13 +1,17 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 import { ApiError } from '@lingcoo-tech/http';
-import { hashPassword, needsPasswordRehash, verifyPassword } from '@lingcoo-tech/security/password';
+import { hashPassword, needsPasswordRehash, verifyPassword } from '../infrastructure/password.js';
 import type {
   ChangePasswordRequest,
   ConfirmPasswordReset,
   LoginRequest,
 } from '@lingcoo-edu-oms/contracts';
-import { emailAddressSchema, passwordSchema } from '@lingcoo-edu-oms/contracts';
+import {
+  createAccessUserRequestSchema,
+  loginRequestSchema,
+  passwordSchema,
+} from '@lingcoo-edu-oms/contracts';
 
 import type { AppEnvironment } from '../../../config/environment.js';
 import type { DatabaseExecutor } from '../../../database/database.js';
@@ -38,7 +42,7 @@ function digest(value: string): string {
 }
 
 function invalidCredentials(): ApiError {
-  return new ApiError(401, 'INVALID_CREDENTIALS', '邮箱或密码错误');
+  return new ApiError(401, 'INVALID_CREDENTIALS', '邮箱、手机号或密码错误');
 }
 
 function invalidActionToken(): ApiError {
@@ -56,12 +60,14 @@ export class IdentityService {
   ) {}
 
   async login(input: LoginRequest, context: Partial<AuditContext>): Promise<IdentityLoginResult> {
-    const credential = await this.repository.findCredentialByEmail(input.email);
+    const parsed = loginRequestSchema.parse(input);
+    const identifier = parsed.identifier ?? parsed.email!;
+    const credential = await this.repository.findCredentialByIdentifier(identifier);
     const passwordHash = credential?.passwordHash ?? (await this.dummyPasswordHash);
     const valid = await verifyPassword(input.password, passwordHash);
     if (!credential || !valid || credential.user.status !== 'active') {
       await this.audit.record({
-        ...this.userAuditContext(context, null, input.email),
+        ...this.userAuditContext(context, null, identifier),
         category: 'security',
         action: 'identity.login.failed',
         resourceType: 'identity.session',
@@ -75,6 +81,16 @@ export class IdentityService {
     const csrfToken = token();
     const expiresAt = new Date(Date.now() + this.environment.AUTH_SESSION_TTL_SECONDS * 1000);
     const session = await this.repository.transaction(async (transaction) => {
+      await this.repository.lockUser(credential.user.id, transaction);
+      const current = await this.repository.findCredentialByUserId(credential.user.id, transaction);
+      if (
+        !current ||
+        current.user.status !== 'active' ||
+        current.passwordHash !== credential.passwordHash
+      ) {
+        throw invalidCredentials();
+      }
+      credential.user = current.user;
       if (needsPasswordRehash(credential.passwordHash)) {
         await this.repository.updatePasswordHash(
           credential.user.id,
@@ -98,7 +114,7 @@ export class IdentityService {
           ...this.userAuditContext(
             context,
             credential.user.id,
-            credential.user.displayName ?? credential.user.email,
+            credential.user.displayName ?? credential.user.email ?? credential.user.phone,
           ),
           category: 'security',
           action: 'identity.login.succeeded',
@@ -203,6 +219,9 @@ export class IdentityService {
     }
     const passwordHash = await hashPassword(input.newPassword);
     await this.repository.transaction(async (transaction) => {
+      await this.repository.lockUser(userId, transaction);
+      const current = await this.repository.findCredentialByUserId(userId, transaction);
+      if (!current || current.passwordHash !== credential.passwordHash) throw invalidCredentials();
       await this.repository.changePasswordAndRevokeSessions(userId, passwordHash, transaction);
       await this.audit.record(
         {
@@ -222,7 +241,7 @@ export class IdentityService {
     context?: Partial<AuditContext>,
   ): Promise<{ accepted: true; testToken?: string }> {
     const user = await this.repository.findUserByEmail(email);
-    if (!user || user.status !== 'active') {
+    if (!user || !user.email || user.status !== 'active') {
       await this.audit.record({
         ...this.userAuditContext(context, null, email),
         category: 'security',
@@ -247,7 +266,7 @@ export class IdentityService {
       );
       await this.audit.record(
         {
-          ...this.userAuditContext(context, user.id, user.displayName ?? user.email),
+          ...this.userAuditContext(context, user.id, user.displayName ?? user.email ?? user.phone),
           category: 'security',
           action: 'identity.password-reset.requested',
           resourceType: 'identity.user',
@@ -258,7 +277,7 @@ export class IdentityService {
       );
       await this.actionDelivery.deliver({
         userId: user.id,
-        email: user.email,
+        email: user.email!,
         purpose: 'password_reset',
         token: actionToken,
         tokenDigest,
@@ -299,7 +318,12 @@ export class IdentityService {
     context?: Partial<AuditContext>,
   ): Promise<{ accepted: true; testToken?: string }> {
     const credential = await this.repository.findCredentialByUserId(userId);
-    if (!credential || credential.user.status !== 'active' || credential.user.emailVerifiedAt) {
+    if (
+      !credential ||
+      !credential.user.email ||
+      credential.user.status !== 'active' ||
+      credential.user.emailVerifiedAt
+    ) {
       return { accepted: true };
     }
     const actionToken = token();
@@ -320,7 +344,7 @@ export class IdentityService {
           ...this.userAuditContext(
             context,
             userId,
-            credential.user.displayName ?? credential.user.email,
+            credential.user.displayName ?? credential.user.email ?? credential.user.phone,
           ),
           category: 'security',
           action: 'identity.email-verification.requested',
@@ -331,7 +355,7 @@ export class IdentityService {
       );
       await this.actionDelivery.deliver({
         userId,
-        email: credential.user.email,
+        email: credential.user.email!,
         purpose: 'email_verification',
         token: actionToken,
         tokenDigest,
@@ -405,30 +429,38 @@ export class IdentityService {
     return this.repository.listUsers(input);
   }
 
-  async getUser(userId: string): Promise<PublicIdentityUser> {
-    const user = await this.repository.findUserById(userId);
+  async getUser(userId: string, executor?: DatabaseExecutor): Promise<PublicIdentityUser> {
+    const user = await this.repository.findUserById(userId, executor);
     if (!user) throw new ApiError(404, 'IDENTITY_USER_NOT_FOUND', '账号不存在');
     return user;
   }
 
+  findUsersByIds(userIds: string[]): Promise<PublicIdentityUser[]> {
+    return this.repository.findUsersByIds(userIds);
+  }
+
   async createUser(
     input: {
-      email: string;
+      email?: string | null;
+      phone?: string | null;
+      mustChangePassword?: boolean;
       password: string;
       displayName?: string | null;
       emailVerified?: boolean;
     },
     context: { executor?: DatabaseExecutor } = {},
   ): Promise<PublicIdentityUser> {
-    const email = emailAddressSchema.parse(input.email);
-    const password = passwordSchema.parse(input.password);
-    if (await this.repository.findUserByEmail(email)) {
+    const parsed = createAccessUserRequestSchema.parse(input);
+    const { email, phone, password } = parsed;
+    if (email && (await this.repository.findUserByEmail(email))) {
       throw new ApiError(409, 'IDENTITY_EMAIL_EXISTS', '邮箱已被使用');
     }
     try {
       return await this.repository.createUser(
         {
           email,
+          phone,
+          mustChangePassword: parsed.mustChangePassword,
           displayName: input.displayName,
           passwordHash: await hashPassword(password),
           emailVerified: input.emailVerified ?? false,
@@ -436,11 +468,48 @@ export class IdentityService {
         context.executor,
       );
     } catch (error) {
-      if (this.isUniqueViolation(error)) {
-        throw new ApiError(409, 'IDENTITY_EMAIL_EXISTS', '邮箱已被使用');
+      const constraint = this.uniqueViolationConstraint(error);
+      if (constraint) {
+        const isPhone = constraint === 'identity_users_phone_unique';
+        throw new ApiError(
+          409,
+          isPhone ? 'IDENTITY_PHONE_EXISTS' : 'IDENTITY_EMAIL_EXISTS',
+          isPhone ? '手机号已被使用' : '邮箱已被使用',
+        );
       }
       throw error;
     }
+  }
+
+  async adminResetPassword(
+    userId: string,
+    newPassword: string,
+    context: AuditContext,
+  ): Promise<void> {
+    const passwordHash = await hashPassword(passwordSchema.parse(newPassword));
+    await this.repository.transaction(async (transaction) => {
+      await this.repository.lockUser(userId, transaction);
+      if (!(await this.repository.findUserById(userId, transaction))) {
+        throw new ApiError(404, 'IDENTITY_USER_NOT_FOUND', '账号不存在');
+      }
+      await this.repository.changePasswordAndRevokeSessions(
+        userId,
+        passwordHash,
+        transaction,
+        true,
+      );
+      await this.audit.record(
+        {
+          ...context,
+          category: 'security',
+          action: 'identity.password.admin-reset',
+          resourceType: 'identity.user',
+          resourceId: userId,
+          metadata: { sessionsRevoked: true, mustChangePassword: true },
+        },
+        transaction,
+      );
+    });
   }
 
   async updateUser(
@@ -488,13 +557,14 @@ export class IdentityService {
       : { accepted: true };
   }
 
-  private isUniqueViolation(error: unknown): boolean {
+  private uniqueViolationConstraint(error: unknown): string | null {
     let current = error;
     for (let depth = 0; depth < 3; depth += 1) {
-      if (typeof current !== 'object' || current === null) return false;
-      if ('code' in current && (current as { code?: unknown }).code === '23505') return true;
+      if (typeof current !== 'object' || current === null) return null;
+      if ('code' in current && current.code === '23505')
+        return 'constraint' in current ? String(current.constraint) : 'unknown';
       current = 'cause' in current ? (current as { cause?: unknown }).cause : undefined;
     }
-    return false;
+    return null;
   }
 }

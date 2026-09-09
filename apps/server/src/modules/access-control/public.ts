@@ -12,3 +12,7 @@ export type {
   AccessRoleSummary,
   AccessUserRole,
 } from './domain/model.js';
+export {
+  EDUCATION_PERMISSION_DEFINITIONS,
+  EDUCATION_ROLE_DEFAULTS,
+} from './domain/education-permissions.js';

@@ -33,3 +33,16 @@ export interface NotificationPreferenceResolver {
     recipientStatus: 'active' | 'disabled';
   }): Promise<{ channels: NotificationChannel[] }>;
 }
+
+export interface NotificationRecipientDirectory {
+  findById(
+    userId: string,
+    transaction: DatabaseTransaction,
+  ): Promise<{
+    id: string;
+    email: string | null;
+    status: 'active' | 'disabled';
+  } | null>;
+  listActive(limit: number): Promise<Array<{ id: string }>>;
+  findActiveByIds(userIds: string[]): Promise<Array<{ id: string }>>;
+}

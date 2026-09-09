@@ -1,0 +1,2 @@
+ALTER TABLE "organization_profile" ADD COLUMN "operation_mode" varchar(32) DEFAULT 'mixed' NOT NULL;--> statement-breakpoint
+ALTER TABLE "organization_profile" ADD CONSTRAINT "organization_profile_operation_mode_check" CHECK ("organization_profile"."operation_mode" in ('self_operated_only', 'mixed'));

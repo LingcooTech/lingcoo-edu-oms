@@ -1,4 +1,4 @@
-import { LockOutlined, MailOutlined } from '@ant-design/icons';
+import { LockOutlined, MobileOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Form, Input, Space, Typography } from 'antd';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 
@@ -29,18 +29,21 @@ export function LoginPage() {
           size="large"
           requiredMark={false}
           onFinish={(values) =>
-            login.mutate(values, { onSuccess: () => navigate(destination, { replace: true }) })
+            login.mutate(
+              { identifier: values.identifier, password: values.password },
+              { onSuccess: () => navigate(destination, { replace: true }) },
+            )
           }
         >
           <Form.Item
-            name="email"
-            label="邮箱"
-            rules={[{ required: true, type: 'email', message: '请输入有效邮箱' }]}
+            name="identifier"
+            label="邮箱或手机号"
+            rules={[{ required: true, message: '请输入邮箱或手机号' }]}
           >
             <Input
-              prefix={<MailOutlined />}
+              prefix={<MobileOutlined />}
               autoComplete="username"
-              placeholder="owner@example.com"
+              placeholder="name@example.com / 13800000000"
             />
           </Form.Item>
           <Form.Item

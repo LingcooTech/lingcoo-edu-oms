@@ -3,6 +3,43 @@ import { createIdentityApi } from '../src/identity.js';
 import { describe, expect, it, vi } from 'vitest';
 
 describe('identity api', () => {
+  it('returns the opaque session token for a native client login', async () => {
+    const now = '2026-09-08T00:00:00.000Z';
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          user: {
+            id: '11111111-1111-4111-8111-111111111111',
+            email: 'teacher@example.com',
+            phone: null,
+            mustChangePassword: false,
+            displayName: '教师',
+            status: 'active',
+            emailVerifiedAt: null,
+            createdAt: now,
+          },
+          session: {
+            id: '22222222-2222-4222-8222-222222222222',
+            expiresAt: '2026-09-09T00:00:00.000Z',
+          },
+          csrfToken: 'c'.repeat(32),
+          accessToken: 's'.repeat(48),
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    const api = createIdentityApi(createApiClient({ fetch }));
+
+    const result = await api.nativeLogin({
+      identifier: 'teacher@example.com',
+      password: 'teacher-password',
+    });
+
+    expect(result.accessToken).toBe('s'.repeat(48));
+    expect(fetch.mock.calls[0]?.[0]).toBe('/api/auth/native/login');
+    expect(fetch.mock.calls[0]?.[1]?.method).toBe('POST');
+  });
+
   it('maps an unauthenticated session response to null', async () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()

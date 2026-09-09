@@ -22,6 +22,20 @@ export function RequireSession() {
   if (!session.data) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
+  const mustChangePassword = session.data.user.mustChangePassword;
+  if (mustChangePassword && location.pathname !== '/account/security') {
+    return <Navigate to="/account/security" replace state={{ forcedPasswordChange: true }} />;
+  }
+  // The API intentionally blocks permission reads until the password is changed.
+  // Render the only permitted destination without the navigation shell or permission provider.
+  if (mustChangePassword)
+    return (
+      <main className="forced-password-page">
+        <PermissionProvider permissions={[]}>
+          <Outlet />
+        </PermissionProvider>
+      </main>
+    );
   return <AuthenticatedApplication />;
 }
 

@@ -163,7 +163,7 @@ function actor(request: Parameters<typeof auditContextFromRequest>[0]) {
     ...auditContextFromRequest(request, {
       type: 'user' as const,
       id: user.id,
-      label: user.displayName ?? user.email,
+      label: user.displayName ?? user.email ?? user.phone,
     }),
     actorId: user.id,
   };

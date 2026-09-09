@@ -1,0 +1,3 @@
+ALTER TABLE "people_student_institutions" ADD COLUMN "source" varchar(32) DEFAULT 'manual' NOT NULL;--> statement-breakpoint
+ALTER TABLE "people_student_institutions" ADD COLUMN "source_reference" varchar(200);--> statement-breakpoint
+ALTER TABLE "people_student_institutions" ADD CONSTRAINT "people_student_institutions_source_check" CHECK ("people_student_institutions"."source" in ('manual','legacy_contract','legacy_course_provider','legacy_assignment'));

@@ -10,7 +10,7 @@ import type {
 import type { DatabaseHandle, DatabaseTransaction } from '../../../database/database.js';
 import type { AuditContext, AuditWriter } from '../../audit/public.js';
 import type { JobsService } from '../../jobs/public.js';
-import type { NotificationPublisher } from '../domain/model.js';
+import type { NotificationPublisher, NotificationRecipientDirectory } from '../domain/model.js';
 import type { NotificationsRepository } from '../infrastructure/persistence/notifications.repository.js';
 import { notificationDigest } from './notification-hash.js';
 
@@ -26,6 +26,7 @@ export class AnnouncementService {
     private readonly database: DatabaseHandle,
     private readonly repository: NotificationsRepository,
     private readonly jobs: JobsService,
+    private readonly recipients: NotificationRecipientDirectory,
     private readonly notifications: NotificationPublisher,
     private readonly audit: AuditWriter,
     private readonly clock: () => Date = () => new Date(),
@@ -313,7 +314,7 @@ export class AnnouncementService {
       await this.repository.replaceTargets(id, [], transaction);
       return;
     }
-    const active = await this.repository.activeUsersByIds(audience.userIds, transaction);
+    const active = await this.recipients.findActiveByIds(audience.userIds);
     if (active.length !== audience.userIds.length)
       throw new ApiError(400, 'ANNOUNCEMENT_AUDIENCE_INVALID', '指定受众包含不存在或已停用的账号');
     await this.repository.replaceTargets(
@@ -328,7 +329,7 @@ export class AnnouncementService {
     transaction: DatabaseTransaction,
   ) {
     if (announcement.audienceType === 'all_active_users') {
-      const users = await this.repository.activeUsers(MAX_BROADCAST_RECIPIENTS + 1, transaction);
+      const users = await this.recipients.listActive(MAX_BROADCAST_RECIPIENTS + 1);
       if (users.length > MAX_BROADCAST_RECIPIENTS)
         throw new ApiError(
           400,
@@ -340,7 +341,7 @@ export class AnnouncementService {
       return ids;
     }
     const ids = await this.repository.targetRecipientIds(announcement.id, transaction);
-    const active = await this.repository.activeUsersByIds(ids, transaction);
+    const active = await this.recipients.findActiveByIds(ids);
     if (active.length !== ids.length)
       throw new ApiError(
         409,

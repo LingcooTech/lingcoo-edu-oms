@@ -12,7 +12,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 
-import { identityUsers } from '../../../identity/public.js';
+import { identityUsersForeignKeyTarget } from '../../../../database/foreign-key-targets.js';
 
 export const paymentIntents = pgTable(
   'payment_intents',
@@ -30,7 +30,9 @@ export const paymentIntents = pgTable(
     revision: integer('revision').notNull().default(1),
     paidAt: timestamp('paid_at', { withTimezone: true }),
     closedAt: timestamp('closed_at', { withTimezone: true }),
-    createdBy: uuid('created_by').references(() => identityUsers.id, { onDelete: 'set null' }),
+    createdBy: uuid('created_by').references(() => identityUsersForeignKeyTarget.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -125,7 +127,9 @@ export const paymentRefunds = pgTable(
     amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
     reason: varchar('reason', { length: 500 }).notNull(),
     status: varchar('status', { length: 20 }).notNull().default('pending'),
-    createdBy: uuid('created_by').references(() => identityUsers.id, { onDelete: 'set null' }),
+    createdBy: uuid('created_by').references(() => identityUsersForeignKeyTarget.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

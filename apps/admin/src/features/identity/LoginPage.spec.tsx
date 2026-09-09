@@ -17,8 +17,8 @@ describe('LoginPage', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('heading', { name: '登录管理后台' })).toBeInTheDocument();
-    expect(screen.getByLabelText('邮箱')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '登录 Lingcoo Edu OMS' })).toBeInTheDocument();
+    expect(screen.getByLabelText('邮箱或手机号')).toBeInTheDocument();
     expect(screen.getByLabelText('密码')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /登\s*录/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '忘记密码？' })).toBeInTheDocument();

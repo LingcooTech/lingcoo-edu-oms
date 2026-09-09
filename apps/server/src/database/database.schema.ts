@@ -11,3 +11,9 @@ export * from '../modules/notifications/infrastructure/persistence/notifications
 export * from '../modules/storage/infrastructure/persistence/storage.schema.js';
 export * from '../modules/branding/infrastructure/persistence/branding.schema.js';
 export * from '../modules/payments/infrastructure/persistence/payments.schema.js';
+export * from '../modules/organization/infrastructure/persistence/organization.schema.js';
+export * from '../modules/people/infrastructure/persistence/people.schema.js';
+export * from '../modules/lesson-products/infrastructure/persistence/lesson-products.schema.js';
+export * from '../modules/lesson-accounts/infrastructure/persistence/lesson-accounts.schema.js';
+export * from '../modules/lesson-sessions/infrastructure/persistence/lesson-sessions.schema.js';
+export * from '../modules/teaching-resources/infrastructure/persistence/teaching-resources.schema.js';

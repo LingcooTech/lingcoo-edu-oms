@@ -2,7 +2,7 @@ import type { EncryptedEnvelope } from '@lingcoo-tech/crypto';
 import { sql } from 'drizzle-orm';
 import { check, integer, jsonb, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 
-import { identityUsers } from '../../../identity/public.js';
+import { identityUsersForeignKeyTarget } from '../../../../database/foreign-key-targets.js';
 
 export const systemSettings = pgTable(
   'system_settings',
@@ -12,7 +12,9 @@ export const systemSettings = pgTable(
     encryptedValue: jsonb('encrypted_value').$type<EncryptedEnvelope>(),
     encryptionKeyId: varchar('encryption_key_id', { length: 120 }),
     version: integer('version').notNull().default(1),
-    updatedBy: uuid('updated_by').references(() => identityUsers.id, { onDelete: 'set null' }),
+    updatedBy: uuid('updated_by').references(() => identityUsersForeignKeyTarget.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

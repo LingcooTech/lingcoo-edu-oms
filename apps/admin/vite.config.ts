@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const apiProxyTarget = process.env.API_PROXY_TARGET || 'http://localhost:8090';
+
 export default defineConfig({
   base: '/admin/',
   plugins: [react()],
@@ -9,8 +11,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://localhost:8090',
-      '/health': 'http://localhost:8090',
+      '/api': apiProxyTarget,
+      '/health': apiProxyTarget,
     },
   },
 });

@@ -1,0 +1,140 @@
+import { and, asc, count, eq, ilike, or, type SQL } from 'drizzle-orm';
+import type {
+  CreateLessonPackageRequest,
+  LessonPackageListQuery,
+  UpdateLessonPackageRequest,
+} from '@lingcoo-edu-oms/contracts';
+
+import type {
+  DatabaseExecutor,
+  DatabaseHandle,
+  DatabaseTransaction,
+} from '../../../../database/database.js';
+import { lessonPackageTemplates, lessonPackageVersions } from './lesson-products.schema.js';
+
+export type LessonPackageRecord = typeof lessonPackageTemplates.$inferSelect;
+export type LessonPackageVersionRecord = typeof lessonPackageVersions.$inferSelect;
+
+export class LessonProductsRepository {
+  constructor(private readonly database: DatabaseHandle) {}
+
+  async list(institutionId: string, input: LessonPackageListQuery) {
+    const filters: SQL[] = [eq(lessonPackageTemplates.institutionId, institutionId)];
+    if (input.status) filters.push(eq(lessonPackageTemplates.status, input.status));
+    if (input.search) {
+      const search = `%${input.search}%`;
+      filters.push(
+        or(
+          ilike(lessonPackageTemplates.name, search),
+          ilike(lessonPackageTemplates.description, search),
+        )!,
+      );
+    }
+    const where = and(...filters);
+    const [items, totals] = await Promise.all([
+      this.database.db
+        .select()
+        .from(lessonPackageTemplates)
+        .where(where)
+        .orderBy(asc(lessonPackageTemplates.name), asc(lessonPackageTemplates.id))
+        .limit(input.pageSize)
+        .offset((input.page - 1) * input.pageSize),
+      this.database.db.select({ value: count() }).from(lessonPackageTemplates).where(where),
+    ]);
+    return { items, total: totals[0]?.value ?? 0 };
+  }
+
+  async find(id: string, executor: DatabaseExecutor = this.database.db) {
+    const [record] = await executor
+      .select()
+      .from(lessonPackageTemplates)
+      .where(eq(lessonPackageTemplates.id, id))
+      .limit(1);
+    return record ?? null;
+  }
+
+  async findForInstitution(
+    institutionId: string,
+    id: string,
+    executor: DatabaseExecutor = this.database.db,
+  ) {
+    const [record] = await executor
+      .select()
+      .from(lessonPackageTemplates)
+      .where(
+        and(
+          eq(lessonPackageTemplates.id, id),
+          eq(lessonPackageTemplates.institutionId, institutionId),
+        ),
+      )
+      .limit(1);
+    return record ?? null;
+  }
+
+  async findVersion(
+    packageId: string,
+    version: number,
+    executor: DatabaseExecutor = this.database.db,
+  ) {
+    const [record] = await executor
+      .select()
+      .from(lessonPackageVersions)
+      .where(
+        and(
+          eq(lessonPackageVersions.packageId, packageId),
+          eq(lessonPackageVersions.version, version),
+        ),
+      )
+      .limit(1);
+    return record ?? null;
+  }
+
+  async create(
+    input: CreateLessonPackageRequest & { institutionId: string },
+    executor: DatabaseTransaction,
+  ) {
+    const [record] = await executor.insert(lessonPackageTemplates).values(input).returning();
+    const version = await this.createVersion(record!, executor);
+    return { record: record!, version };
+  }
+
+  async update(
+    institutionId: string,
+    id: string,
+    input: UpdateLessonPackageRequest,
+    executor: DatabaseTransaction,
+  ) {
+    const { expectedRevision, ...changes } = input;
+    const [record] = await executor
+      .update(lessonPackageTemplates)
+      .set({ ...changes, revision: expectedRevision + 1, updatedAt: new Date() })
+      .where(
+        and(
+          eq(lessonPackageTemplates.id, id),
+          eq(lessonPackageTemplates.institutionId, institutionId),
+          eq(lessonPackageTemplates.revision, expectedRevision),
+        ),
+      )
+      .returning();
+    if (!record) return null;
+    const version = await this.createVersion(record, executor);
+    return { record, version };
+  }
+
+  private async createVersion(record: LessonPackageRecord, executor: DatabaseTransaction) {
+    const [version] = await executor
+      .insert(lessonPackageVersions)
+      .values({
+        packageId: record.id,
+        institutionId: record.institutionId,
+        version: record.revision,
+        name: record.name,
+        description: record.description,
+        baseUnits: record.baseUnits,
+        bonusUnits: record.bonusUnits,
+        status: record.status,
+      })
+      .returning();
+    return version!;
+  }
+}

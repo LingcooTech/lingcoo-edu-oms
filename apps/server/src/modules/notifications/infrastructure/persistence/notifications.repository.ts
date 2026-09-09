@@ -19,7 +19,6 @@ import type {
   DatabaseHandle,
   DatabaseTransaction,
 } from '../../../../database/database.js';
-import { identityUsers } from '../../../identity/public.js';
 import {
   notificationAnnouncements,
   notificationAnnouncementTargets,
@@ -28,19 +27,6 @@ import {
 
 export class NotificationsRepository {
   constructor(private readonly database: DatabaseHandle) {}
-
-  async findRecipient(id: string, executor: DatabaseExecutor) {
-    const [user] = await executor
-      .select({
-        id: identityUsers.id,
-        email: identityUsers.email,
-        status: identityUsers.status,
-      })
-      .from(identityUsers)
-      .where(eq(identityUsers.id, id))
-      .limit(1);
-    return user ?? null;
-  }
 
   async insertNotification(
     input: typeof notifications.$inferInsert,
@@ -271,24 +257,6 @@ export class NotificationsRepository {
         .insert(notificationAnnouncementTargets)
         .values(recipientUserIds.map((recipientUserId) => ({ announcementId, recipientUserId })));
     }
-  }
-
-  async activeUsers(limit: number, executor: DatabaseExecutor) {
-    return executor
-      .select({ id: identityUsers.id })
-      .from(identityUsers)
-      .where(eq(identityUsers.status, 'active'))
-      .orderBy(asc(identityUsers.id))
-      .limit(limit);
-  }
-
-  async activeUsersByIds(ids: string[], executor: DatabaseExecutor) {
-    if (!ids.length) return [];
-    return executor
-      .select({ id: identityUsers.id })
-      .from(identityUsers)
-      .where(and(inArray(identityUsers.id, ids), eq(identityUsers.status, 'active')))
-      .orderBy(asc(identityUsers.id));
   }
 
   async targetRecipientIds(announcementId: string, executor: DatabaseExecutor) {

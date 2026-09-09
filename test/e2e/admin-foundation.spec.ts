@@ -23,6 +23,8 @@ test.beforeEach(async ({ page }) => {
         user: {
           id: '7f4cc774-403b-4d44-8c43-8f2fb26f0a85',
           email: 'owner@example.com',
+          phone: null,
+          mustChangePassword: false,
           displayName: 'Bootstrap Owner',
           status: 'active',
           emailVerifiedAt: '2026-08-30T00:00:00.000Z',
@@ -122,6 +124,8 @@ test.beforeEach(async ({ page }) => {
           {
             id: '7f4cc774-403b-4d44-8c43-8f2fb26f0a85',
             email: 'owner@example.com',
+            phone: null,
+            mustChangePassword: false,
             displayName: 'Bootstrap Owner',
             status: 'active',
             emailVerifiedAt: '2026-08-30T00:00:00.000Z',
@@ -907,7 +911,7 @@ test('redirects an unauthenticated visitor to the login page', async ({ page }) 
 
   await expect(page).toHaveURL(/\/admin\/login$/);
   await expect(page.getByRole('heading', { name: '登录管理后台' })).toBeVisible();
-  await expect(page.getByLabel('邮箱')).toBeVisible();
+  await expect(page.getByLabel('邮箱或手机号')).toBeVisible();
   await expect(page.getByLabel('密码')).toBeVisible();
   expect(browserErrors.get(page)).toEqual([
     'Failed to load resource: the server responded with a status of 401 (Unauthorized)',
@@ -919,21 +923,23 @@ test.afterEach(async ({ page }) => {
   expect(browserErrors.get(page) ?? []).toEqual([]);
 });
 
-test('renders the Admin foundation and navigates to the showcase', async ({ page }) => {
+test('renders the education phase-one workspace and navigates to account management', async ({
+  page,
+}) => {
   test.setTimeout(60_000);
   await page.goto('/admin/');
 
-  await expect(page.getByRole('heading', { name: '工作台' })).toBeVisible();
-  await expect(page.getByText('运行正常')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '教育 OMS 迁移一期' })).toBeVisible();
+  await expect(page.getByText('身份、账号、角色', { exact: true })).toBeVisible();
 
   if (page.viewportSize() && page.viewportSize()!.width < 992) {
     await page.getByRole('button', { name: '打开导航' }).click();
   }
-  await page.getByRole('menuitem', { name: /组件示例/ }).click();
-  await expect(page.getByRole('heading', { name: 'UI 基础展示' })).toBeVisible({
+  await page.getByRole('menuitem', { name: /账号管理/ }).click();
+  await expect(page.getByRole('heading', { name: '账号管理' })).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByRole('columnheader', { name: '边界' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: '联系方式' })).toBeVisible();
 });
 
 test('supports refreshing a deep Admin route', async ({ page }) => {

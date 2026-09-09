@@ -12,7 +12,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 
-import { identityUsers } from '../../../identity/public.js';
+import { identityUsersForeignKeyTarget } from '../../../../database/foreign-key-targets.js';
 import type { IdempotencyStorageStatus, StoredResultEnvelope } from '../../domain/model.js';
 
 export const idempotencyRecords = pgTable(
@@ -39,7 +39,9 @@ export const idempotencyRecords = pgTable(
     lastErrorMessage: varchar('last_error_message', { length: 500 }),
     lastErrorStatus: integer('last_error_status'),
     lastErrorRetryable: boolean('last_error_retryable'),
-    actorId: uuid('actor_id').references(() => identityUsers.id, { onDelete: 'set null' }),
+    actorId: uuid('actor_id').references(() => identityUsersForeignKeyTarget.id, {
+      onDelete: 'set null',
+    }),
     lockedUntil: timestamp('locked_until', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }),

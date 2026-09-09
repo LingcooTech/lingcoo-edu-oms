@@ -7,6 +7,7 @@ import {
   identityStatusSchema,
   identityUserSchema,
   passwordSchema,
+  mainlandChinaPhoneSchema,
 } from './identity.js';
 
 export const permissionKeySchema = z
@@ -18,7 +19,7 @@ export const permissionKeySchema = z
 export const roleKeySchema = z
   .string()
   .trim()
-  .regex(/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/)
+  .regex(/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$/)
   .max(120);
 
 export const permissionSchema = z.object({
@@ -78,13 +79,19 @@ export const accessUserPageSchema = z.object({
   pageSize: z.number().int().positive(),
   total: z.number().int().nonnegative(),
 });
-export const createAccessUserRequestSchema = z.object({
-  email: emailAddressSchema,
-  password: passwordSchema,
-  displayName: z.string().trim().min(1).max(120).nullable().optional(),
-  emailVerified: z.boolean().default(false),
-  roleIds: z.array(idSchema).default([]),
-});
+export const createAccessUserRequestSchema = z
+  .object({
+    email: emailAddressSchema.nullable().optional(),
+    phone: mainlandChinaPhoneSchema.nullable().optional(),
+    mustChangePassword: z.boolean().optional(),
+    password: passwordSchema,
+    displayName: z.string().trim().min(1).max(120).nullable().optional(),
+    emailVerified: z.boolean().default(false),
+    roleIds: z.array(idSchema).default([]),
+  })
+  .refine((value) => Boolean(value.email || value.phone), '至少提供邮箱或手机号');
+export const adminResetPasswordRequestSchema = z.object({ newPassword: passwordSchema });
+export type AdminResetPasswordRequest = z.infer<typeof adminResetPasswordRequestSchema>;
 export const updateAccessUserRequestSchema = z
   .object({
     displayName: z.string().trim().min(1).max(120).nullable().optional(),
