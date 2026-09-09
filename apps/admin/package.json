@@ -10,26 +10,26 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ant-design/icons": "6.3.2",
+    "@ant-design/icons": "6.3.4",
     "@tanstack/react-query": "5.102.8",
     "@lingcoo-edu-oms/api-client": "workspace:*",
     "@lingcoo-edu-oms/contracts": "workspace:*",
     "antd": "6.6.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-error-boundary": "6.1.3",
+    "react-error-boundary": "6.1.5",
     "react-router-dom": "7.18.3"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.3",
-    "@testing-library/user-event": "14.6.6",
+    "@testing-library/user-event": "14.6.7",
     "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.4",
-    "@vitejs/plugin-react": "6.0.5",
+    "@types/react-dom": "19.2.7",
+    "@vitejs/plugin-react": "6.1.1",
     "jsdom": "30.0.1",
     "typescript": "5.9.3",
-    "vite": "8.2.1",
+    "vite": "8.2.2",
     "vitest": "4.1.11"
   }
 }
