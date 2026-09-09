@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@lingcoo-edu-oms/contracts": "workspace:*",
-    "zod": "4.5.2"
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "typescript": "5.9.3",

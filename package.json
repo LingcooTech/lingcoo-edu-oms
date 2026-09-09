@@ -50,13 +50,13 @@
     "start:worker": "corepack pnpm --filter @lingcoo-edu-oms/server start:worker"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.1",
+    "@playwright/test": "1.63.0",
     "@eslint/js": "10.0.1",
     "@types/node": "24.5.2",
-    "eslint": "10.8.1",
-    "globals": "17.11.0",
+    "eslint": "10.10.0",
+    "globals": "17.12.0",
     "prettier": "3.9.6",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.67.0"
+    "typescript-eslint": "8.69.0"
   }
 }
