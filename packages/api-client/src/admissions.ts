@@ -6,6 +6,7 @@ import {
   admissionTrialListQuerySchema,
   admissionTrialPageSchema,
   admissionTrialRegistrationSchema,
+  admissionTrialRegistrationListSchema,
   admissionTrialSessionSchema,
   bookAdmissionTrialRequestSchema,
   checkInAdmissionTrialRequestSchema,
@@ -144,7 +145,7 @@ export function createAdmissionsApi(client: ApiClient) {
     listRegistrations(trialId: string) {
       return client.request({
         path: `${trialPath(trialId)}/registrations`,
-        schema: admissionTrialRegistrationSchema.array(),
+        schema: admissionTrialRegistrationListSchema,
       });
     },
     checkIn(trialId: string, leadId: string, input?: CheckInAdmissionTrialRequest) {

@@ -136,6 +136,9 @@ export const admissionTrialRegistrationSchema = z.object({
   notes: z.string().max(2_000).nullable(),
   createdAt: isoDateTimeSchema,
 });
+export const admissionTrialRegistrationListSchema = z.object({
+  items: z.array(admissionTrialRegistrationSchema),
+});
 export const bookAdmissionTrialRequestSchema = z.object({ trialSessionId: idSchema });
 export const checkInAdmissionTrialRequestSchema = z.object({
   notes: z.string().trim().max(2_000).nullable().optional().default(null),
@@ -161,3 +164,4 @@ export type BookAdmissionTrialRequest = z.infer<typeof bookAdmissionTrialRequest
 export type CheckInAdmissionTrialRequest = z.infer<typeof checkInAdmissionTrialRequestSchema>;
 export type ConvertAdmissionLeadRequest = z.infer<typeof convertAdmissionLeadRequestSchema>;
 export type AdmissionTrialRegistration = z.infer<typeof admissionTrialRegistrationSchema>;
+export type AdmissionTrialRegistrationList = z.infer<typeof admissionTrialRegistrationListSchema>;

@@ -807,11 +807,11 @@ function RegistrationModal({
       <AsyncState
         loading={registrations.isPending}
         error={registrations.error}
-        empty={registrations.data?.length === 0}
+        empty={registrations.data?.items.length === 0}
       >
         <Table
           rowKey="id"
-          dataSource={registrations.data ?? []}
+          dataSource={registrations.data?.items ?? []}
           pagination={false}
           columns={[
             { title: '线索 ID', dataIndex: 'leadId' },
