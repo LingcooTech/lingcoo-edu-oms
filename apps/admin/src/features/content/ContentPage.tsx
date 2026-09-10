@@ -314,6 +314,9 @@ function ContentFormModal({
         <Form.Item name="coverUrl" label="封面地址">
           <Input />
         </Form.Item>
+        <Form.Item name="coverThumbUrl" label="缩略图地址">
+          <Input />
+        </Form.Item>
         <Form.Item name="authorName" label="作者">
           <Input />
         </Form.Item>

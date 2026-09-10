@@ -58,6 +58,13 @@ test('招生转化和内容营销后台流程可用', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '招生转化', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: '试听转化', selected: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '新增试听场次' })).toBeVisible();
+  await page.getByRole('button', { name: '新增试听场次' }).click();
+  const trialDialog = page.getByRole('dialog', { name: '新增试听场次' });
+  await expect(trialDialog.getByLabel('所属机构')).toBeVisible();
+  await expect(trialDialog.getByLabel('校区（可选）')).toBeVisible();
+  await expect(trialDialog.getByLabel('课程（可选）')).toBeVisible();
+  await expect(trialDialog.getByLabel('教师（可选）')).toBeVisible();
+  await trialDialog.getByRole('button', { name: /取\s*消/ }).click();
   await page.screenshot({
     path: 'docs/acceptance/admissions/02-trial-conversion.png',
     fullPage: true,

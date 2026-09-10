@@ -6,6 +6,7 @@ import {
   UserAddOutlined,
 } from '@ant-design/icons';
 import type {
+  AccessUser,
   AdmissionLead,
   AdmissionLeadStatus,
   AdmissionTrialSession,
@@ -34,7 +35,10 @@ import { useState } from 'react';
 import { AsyncState } from '../../components/AsyncState';
 import { PageContainer } from '../../components/PageContainer';
 import { useCan } from '../access/PermissionContext';
+import { useUsers } from '../access/hooks';
 import { useInstitutions } from '../organization/hooks';
+import { useTeachers } from '../people/hooks';
+import { useCampuses, useCourses } from '../teaching-resources/hooks';
 import {
   useAddAdmissionFollowUp,
   useAdmissionFollowUps,
@@ -107,6 +111,7 @@ function LeadsPanel() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<AdmissionLead | null>(null);
   const leads = useAdmissionLeads({ page: 1, pageSize: 100, search: search || undefined, status });
+  const users = useUsers({ page: 1, pageSize: 100, status: 'active' });
   const create = useCreateAdmissionLead();
 
   async function submit(values: CreateAdmissionLeadRequest) {
@@ -226,6 +231,7 @@ function LeadsPanel() {
         onCancel={() => setCreateOpen(false)}
       >
         <LeadForm
+          users={users.data?.items ?? []}
           loading={create.isPending}
           onCancel={() => setCreateOpen(false)}
           onSubmit={submit}
@@ -236,10 +242,12 @@ function LeadsPanel() {
 }
 
 function LeadForm({
+  users,
   loading,
   onCancel,
   onSubmit,
 }: {
+  users: readonly AccessUser[];
   loading: boolean;
   onCancel: () => void;
   onSubmit: (values: CreateAdmissionLeadRequest) => Promise<void>;
@@ -282,6 +290,15 @@ function LeadForm({
       <Form.Item name="sourceDetail" label="来源补充">
         <Input.TextArea rows={2} />
       </Form.Item>
+      <Form.Item name="ownerUserId" label="负责人">
+        <Select
+          allowClear
+          options={users.map((user) => ({
+            value: user.id,
+            label: user.displayName || user.email || user.phone || user.id,
+          }))}
+        />
+      </Form.Item>
       <Form.Item>
         <Space>
           <Button onClick={onCancel}>取消</Button>
@@ -306,6 +323,7 @@ function LeadModal({
   const { message } = App.useApp();
   const canManage = useCan('education.leads.manage');
   const institutions = useInstitutions({ page: 1, pageSize: 100, status: 'active' });
+  const users = useUsers({ page: 1, pageSize: 100, status: 'active' });
   const trials = useAdmissionTrials({ page: 1, pageSize: 100, status: 'open' });
   const followUps = useAdmissionFollowUps(lead?.id ?? null);
   const update = useUpdateAdmissionLead();
@@ -319,13 +337,13 @@ function LeadModal({
 
   if (!lead) return null;
   const currentLead = lead;
-  async function changeStatus(value: AdmissionLeadStatus) {
+  async function updateLead(input: { status?: AdmissionLeadStatus; ownerUserId?: string | null }) {
     try {
       await update.mutateAsync({
         id: currentLead.id,
-        input: { expectedRevision: currentLead.revision, status: value },
+        input: { expectedRevision: currentLead.revision, ...input },
       });
-      message.success('线索状态已更新');
+      message.success('线索信息已更新');
     } catch (error) {
       message.error(errorMessage(error));
     }
@@ -397,7 +415,19 @@ function LeadModal({
               value,
               label: item.label,
             }))}
-            onChange={(value) => void changeStatus(value)}
+            onChange={(value) => void updateLead({ status: value })}
+          />
+          <Select
+            allowClear
+            placeholder="负责人"
+            value={lead.ownerUserId ?? undefined}
+            disabled={!canManage || update.isPending}
+            style={{ width: 190 }}
+            options={(users.data?.items ?? []).map((user) => ({
+              value: user.id,
+              label: user.displayName || user.email || user.phone || user.id,
+            }))}
+            onChange={(value) => void updateLead({ ownerUserId: value ?? null })}
           />
           {lead.convertedStudentId && <Tag color="success">已生成学员档案</Tag>}
         </Space>
@@ -657,6 +687,10 @@ function TrialFormModal({
   onSubmit: (values: CreateAdmissionTrialRequest) => Promise<void>;
 }) {
   const [form] = Form.useForm<CreateAdmissionTrialRequest>();
+  const institutionId = Form.useWatch('institutionId', form) ?? null;
+  const campuses = useCampuses({ page: 1, pageSize: 100, status: 'active' });
+  const courses = useCourses(institutionId, { page: 1, pageSize: 100, status: 'active' });
+  const teachers = useTeachers(institutionId, Boolean(institutionId));
   return (
     <Modal title="新增试听场次" open={open} footer={null} destroyOnClose onCancel={onCancel}>
       <Form form={form} layout="vertical" onFinish={onSubmit}>
@@ -666,6 +700,33 @@ function TrialFormModal({
           rules={[{ required: true, message: '请选择机构' }]}
         >
           <Select options={institutions.map((item) => ({ value: item.id, label: item.name }))} />
+        </Form.Item>
+        <Form.Item name="campusId" label="校区（可选）">
+          <Select
+            allowClear
+            options={(campuses.data?.items ?? []).map((item) => ({
+              value: item.id,
+              label: item.name,
+            }))}
+          />
+        </Form.Item>
+        <Form.Item name="courseId" label="课程（可选）">
+          <Select
+            allowClear
+            options={(courses.data?.items ?? []).map((item) => ({
+              value: item.id,
+              label: item.name,
+            }))}
+          />
+        </Form.Item>
+        <Form.Item name="teacherId" label="教师（可选）">
+          <Select
+            allowClear
+            options={(teachers.data?.items ?? []).map((item) => ({
+              value: item.id,
+              label: item.fullName,
+            }))}
+          />
         </Form.Item>
         <Form.Item
           name="title"
