@@ -133,6 +133,14 @@ const LessonSessionsPage = lazy(() =>
     default: module.LessonSessionsPage,
   })),
 );
+const AdmissionsPage = lazy(() =>
+  import('../features/admissions/AdmissionsPage').then((module) => ({
+    default: module.AdmissionsPage,
+  })),
+);
+const ContentPage = lazy(() =>
+  import('../features/content/ContentPage').then((module) => ({ default: module.ContentPage })),
+);
 
 function RouteLoading() {
   return (
@@ -163,6 +171,13 @@ export function AppRouter() {
             </Route>
             <Route element={<RequirePermission permissions={['education.students.read']} />}>
               <Route path="students" element={<StudentsPage />} />
+            </Route>
+            <Route element={<RequirePermission permissions={['education.leads.read']} />}>
+              <Route path="admissions/leads" element={<AdmissionsPage initialTab="leads" />} />
+              <Route path="admissions/trials" element={<AdmissionsPage initialTab="trials" />} />
+            </Route>
+            <Route element={<RequirePermission permissions={['education.content.read']} />}>
+              <Route path="content" element={<ContentPage />} />
             </Route>
             <Route element={<RequirePermission permissions={['education.teachers.read']} />}>
               <Route path="teachers" element={<TeachersPage />} />

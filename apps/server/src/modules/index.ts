@@ -74,6 +74,8 @@ import {
   createContentSourcesService,
   createNotionConnectionTester,
 } from './content-sources/public.js';
+import { createContentModule, createContentService } from './content/public.js';
+import { createAdmissionsModule, createAdmissionsService } from './admissions/public.js';
 
 export interface ApplicationModuleDependencies {
   environment: AppEnvironment;
@@ -143,6 +145,7 @@ export async function registerApplicationModules(
   });
   const wechatMiniProgram = createWechatMiniProgramService({ settings: settings.service });
   const contentSources = createContentSourcesService({ settings: settings.service });
+  const content = createContentService({ database: dependencies.database, contentSources, audit });
   jobs.registry.register(storage.maintenance.deleteObjectJobHandler);
   jobs.registry.register(storage.maintenance.deleteRejectedObjectJobHandler);
   jobs.registry.register(storage.maintenance.cleanupPendingJobHandler);
@@ -165,6 +168,12 @@ export async function registerApplicationModules(
     identity,
     audit,
     lessonAccounts: lessonAccountProvisioner,
+  });
+  const admissions = createAdmissionsService({
+    database: dependencies.database,
+    institutions: organization,
+    people,
+    audit,
   });
   const lessonProducts = createLessonProductsService({
     database: dependencies.database,
@@ -218,6 +227,23 @@ export async function registerApplicationModules(
       identity,
       audit,
       service: access,
+    }),
+  );
+  await app.register(
+    createContentModule({
+      database: dependencies.database,
+      contentSources,
+      audit,
+      service: content,
+    }),
+  );
+  await app.register(
+    createAdmissionsModule({
+      database: dependencies.database,
+      institutions: organization,
+      people,
+      audit,
+      service: admissions,
     }),
   );
   await app.register(

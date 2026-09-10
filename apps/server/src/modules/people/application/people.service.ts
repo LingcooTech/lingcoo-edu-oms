@@ -78,7 +78,25 @@ export interface StudentLessonAccountProvisioner {
   ): Promise<void>;
 }
 
-export class PeopleService implements EducationDirectory, StudentDirectory, TeacherDirectory {
+export interface StudentOnboardingDirectory {
+  onboardStudent(
+    institutionId: string,
+    student: CreateStudentRequest,
+    guardian: CreateGuardianAndBindRequest,
+    context: AuditContext,
+  ): Promise<{ student: InstitutionStudent; guardian: GuardianBinding }>;
+  onboardStudentInTransaction(
+    institutionId: string,
+    student: CreateStudentRequest,
+    guardian: CreateGuardianAndBindRequest,
+    context: AuditContext,
+    transaction: DatabaseTransaction,
+  ): Promise<{ student: InstitutionStudent; guardian: GuardianBinding }>;
+}
+
+export class PeopleService
+  implements EducationDirectory, StudentDirectory, TeacherDirectory, StudentOnboardingDirectory
+{
   constructor(
     private readonly database: DatabaseHandle,
     private readonly repository: PeopleRepository,
@@ -143,6 +161,72 @@ export class PeopleService implements EducationDirectory, StudentDirectory, Teac
         endedAt: created.relationship.endedAt,
       });
     });
+  }
+
+  async onboardStudent(
+    institutionId: string,
+    studentInput: CreateStudentRequest,
+    guardianInput: CreateGuardianAndBindRequest,
+    context: AuditContext,
+  ): Promise<{ student: InstitutionStudent; guardian: GuardianBinding }> {
+    return this.database.transaction((transaction) =>
+      this.onboardStudentInTransaction(
+        institutionId,
+        studentInput,
+        guardianInput,
+        context,
+        transaction,
+      ),
+    );
+  }
+
+  async onboardStudentInTransaction(
+    institutionId: string,
+    studentInput: CreateStudentRequest,
+    guardianInput: CreateGuardianAndBindRequest,
+    context: AuditContext,
+    transaction: DatabaseTransaction,
+  ): Promise<{ student: InstitutionStudent; guardian: GuardianBinding }> {
+    await this.institutions.assertActiveInstitution(institutionId, transaction);
+    const created = await this.repository.createStudent(institutionId, studentInput, transaction);
+    await this.lessonAccounts.ensureForStudentInstitution(
+      institutionId,
+      created.student.id,
+      context,
+      transaction,
+    );
+    const guardianCreated = await this.repository.createGuardianAndBinding(
+      created.student.id,
+      guardianInput,
+      transaction,
+    );
+    await this.audit.record(
+      {
+        ...context,
+        category: 'business',
+        action: 'student.onboarded',
+        resourceType: 'people.student',
+        resourceId: created.student.id,
+        changes: [
+          { field: 'institutionId', before: null, after: institutionId },
+          { field: 'guardianId', before: null, after: guardianCreated.guardian.id },
+        ],
+      },
+      transaction,
+    );
+    return {
+      student: this.studentView({
+        ...created.student,
+        institutionId: created.relationship.institutionId,
+        relationshipStatus: created.relationship.status,
+        relationshipRevision: created.relationship.revision,
+        relationshipSource: created.relationship.source,
+        relationshipSourceReference: created.relationship.sourceReference,
+        joinedAt: created.relationship.joinedAt,
+        endedAt: created.relationship.endedAt,
+      }),
+      guardian: this.guardianBindingView(guardianCreated.binding, guardianCreated.guardian),
+    };
   }
 
   async addStudentInstitution(

@@ -17,3 +17,5 @@ export * from '../modules/lesson-products/infrastructure/persistence/lesson-prod
 export * from '../modules/lesson-accounts/infrastructure/persistence/lesson-accounts.schema.js';
 export * from '../modules/lesson-sessions/infrastructure/persistence/lesson-sessions.schema.js';
 export * from '../modules/teaching-resources/infrastructure/persistence/teaching-resources.schema.js';
+export * from '../modules/content/infrastructure/persistence/content.schema.js';
+export * from '../modules/admissions/infrastructure/persistence/admissions.schema.js';

@@ -28,6 +28,8 @@ export const EDUCATION_PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   ['orders.manage', '管理订单'],
   ['leads.read', '查看线索'],
   ['leads.manage', '管理线索'],
+  ['content.read', '查看内容'],
+  ['content.manage', '管理内容'],
   ['teaching-resources.read', '查看教学资源'],
   ['teaching-resources.manage', '管理教学资源'],
 ].map(([key, name]) => ({
