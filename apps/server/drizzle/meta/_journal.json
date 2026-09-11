@@ -225,6 +225,13 @@
       "when": 1789116622106,
       "tag": "0031_noisy_angel",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1789123846045,
+      "tag": "0032_yellow_centennial",
+      "breakpoints": true
     }
   ]
 }

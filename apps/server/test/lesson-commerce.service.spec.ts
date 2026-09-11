@@ -19,9 +19,16 @@ function fixture() {
     packageName: '通用课时 20 节',
     baseUnits: 20,
     bonusUnits: 2,
+    channel: 'online' as const,
+    listedAmountMinor: 12_800,
     amountMinor: 12_800,
     currency: 'CNY' as const,
     provider: 'mock' as const,
+    paymentMethod: 'mock' as const,
+    paymentReference: null,
+    paymentNote: null,
+    priceAdjustmentReason: null,
+    receiptNo: 'RC20260911160000ABCDEF123456',
     paymentIntentId: '88888888-8888-4888-8888-888888888888',
     grantMovementId: null as string | null,
     status: 'pending_payment' as
@@ -75,6 +82,7 @@ function fixture() {
     {} as never,
     {} as never,
     audit as never,
+    { getValue: vi.fn(async () => true), publicValues: vi.fn(async () => ({})) } as never,
     () => now,
   );
   return { service, order, repository, lessons };
@@ -104,6 +112,7 @@ describe('LessonCommerceService payment facts', () => {
         packageId: order.packageId,
         packageVersion: 3,
         orderNo: order.orderNo,
+        source: 'online_purchase',
       },
       expect.objectContaining({ actorId: order.createdByUserId }),
     );

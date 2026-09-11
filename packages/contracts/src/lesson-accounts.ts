@@ -6,14 +6,7 @@ import { isoDateTimeSchema } from './common/time.js';
 import { idempotencyKeySchema } from './idempotency.js';
 import { lessonUnitsSchema, nonnegativeLessonUnitsSchema } from './lesson-packages.js';
 
-export const lessonGrantSourceSchema = z.enum([
-  'online_purchase',
-  'offline_purchase',
-  'gift',
-  'makeup',
-  'migration_opening',
-  'custom',
-]);
+export const lessonGrantSourceSchema = z.enum(['gift', 'makeup', 'migration_opening', 'custom']);
 export const lessonBatchSourceTypeSchema = z.enum([
   'online_purchase',
   'offline_purchase',

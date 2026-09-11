@@ -212,6 +212,14 @@ export const foundationNavigation: AdminNavigationItem[] = [
     section: 'ledger',
   },
   {
+    key: 'business-settings',
+    label: '业务开关',
+    path: '/business-settings',
+    icon: <SettingOutlined />,
+    permission: 'settings.read',
+    section: 'ledger',
+  },
+  {
     key: 'lesson-metrics-planned',
     label: '课时经营数据（后续）',
     path: '/lesson-metrics',

@@ -52,8 +52,8 @@ describe('P3 lesson operation contracts', () => {
     expect(
       grantLessonUnitsRequestSchema.parse({
         templateId,
-        source: 'offline_purchase',
-        reason: '线下购课登记',
+        source: 'gift',
+        reason: '活动赠送',
       }),
     ).toMatchObject({ templateId, sourceReference: null });
     expect(
@@ -71,6 +71,20 @@ describe('P3 lesson operation contracts', () => {
         baseUnits: 99,
         source: 'custom',
         reason: '试图覆盖模板数量',
+      }).success,
+    ).toBe(false);
+    expect(
+      grantLessonUnitsRequestSchema.safeParse({
+        templateId,
+        source: 'offline_purchase',
+        reason: '试图绕过订单登记线下销售',
+      }).success,
+    ).toBe(false);
+    expect(
+      grantLessonUnitsRequestSchema.safeParse({
+        templateId,
+        source: 'online_purchase',
+        reason: '试图绕过订单登记线上销售',
       }).success,
     ).toBe(false);
   });

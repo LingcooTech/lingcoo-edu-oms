@@ -16,6 +16,78 @@
   text-rendering: optimizeLegibility;
 }
 
+.lesson-receipt-print-area {
+  padding: 8px;
+  color: #111827;
+  background: #fff;
+}
+
+.lesson-receipt-header {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.lesson-receipt-logo {
+  width: 64px;
+  height: 64px;
+}
+
+.lesson-receipt-logo img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+}
+
+.lesson-receipt-header h2 {
+  margin: 0 !important;
+  letter-spacing: 0.25em;
+}
+
+.lesson-receipt-mark {
+  padding: 10px 8px;
+  color: #b91c1c;
+  border: 2px solid #b91c1c;
+  border-radius: 8px;
+  transform: rotate(-8deg);
+}
+
+.lesson-receipt-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 20px;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.lesson-receipt-disclaimer {
+  margin: 14px 0 0 !important;
+  text-align: center;
+  font-size: 12px;
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  .lesson-receipt-print-area,
+  .lesson-receipt-print-area * {
+    visibility: visible !important;
+  }
+
+  .lesson-receipt-print-area {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    padding: 18mm;
+  }
+}
+
 h1,
 h2,
 h3,

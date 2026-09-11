@@ -1,6 +1,7 @@
 import { ApiError } from '@lingcoo-tech/http';
 import {
   createLessonOrderRequestSchema,
+  createOfflineLessonOrderRequestSchema,
   createMiniStudentRequestSchema,
   idempotencyKeySchema,
   lessonOrderListQuerySchema,
@@ -44,6 +45,9 @@ export async function registerLessonCommerceRoutes(
   app.get('/api/mini/orders/:orderId', { config: authenticated }, async (request) =>
     service.getForGuardian(userId(request), parse(orderParamsSchema, request.params).orderId),
   );
+  app.get('/api/mini/orders/:orderId/receipt', { config: authenticated }, async (request) =>
+    service.receiptForGuardian(userId(request), parse(orderParamsSchema, request.params).orderId),
+  );
   app.post('/api/mini/orders', { config: authenticated }, async (request, reply) => {
     const key = parse(idempotencyKeySchema, firstHeader(request.headers['idempotency-key']));
     const result = await service.createCheckout(
@@ -77,6 +81,43 @@ export async function registerLessonCommerceRoutes(
         parse(institutionParamsSchema, request.params).institutionId,
         parse(lessonOrderListQuerySchema, request.query),
       ),
+  );
+  app.post(
+    '/api/institutions/:institutionId/orders/offline',
+    {
+      config: {
+        access: {
+          permissions: ['education.orders.manage'],
+          education: { institutionParam: 'institutionId', permission: 'education.orders.manage' },
+        },
+      },
+    },
+    async (request, reply) => {
+      const key = parse(idempotencyKeySchema, firstHeader(request.headers['idempotency-key']));
+      const params = parse(institutionParamsSchema, request.params);
+      const order = await service.createOfflineOrder(
+        params.institutionId,
+        parse(createOfflineLessonOrderRequestSchema, request.body),
+        key,
+        actorWithId(request),
+      );
+      return reply.code(201).send(order);
+    },
+  );
+  app.get(
+    '/api/institutions/:institutionId/orders/:orderId/receipt',
+    {
+      config: {
+        access: {
+          permissions: ['education.orders.read'],
+          education: { institutionParam: 'institutionId', permission: 'education.orders.read' },
+        },
+      },
+    },
+    async (request) => {
+      const params = parse(institutionParamsSchema.extend({ orderId: z.uuid() }), request.params);
+      return service.receiptForInstitution(params.institutionId, params.orderId);
+    },
   );
   app.post(
     '/api/institutions/:institutionId/orders/:orderId/actions/retry-grant',

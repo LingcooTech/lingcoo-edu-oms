@@ -1,5 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { LessonOrderListQuery } from '@lingcoo-edu-oms/contracts';
+import type {
+  CreateOfflineLessonOrderRequest,
+  LessonOrderListQuery,
+} from '@lingcoo-edu-oms/contracts';
 
 import { lessonCommerceApi } from './api';
 
@@ -22,5 +25,24 @@ export function useRetryLessonOrderGrant() {
     mutationFn: (input: { institutionId: string; orderId: string }) =>
       lessonCommerceApi.retryGrant(input.institutionId, input.orderId),
     onSuccess: () => client.invalidateQueries({ queryKey: orderKeys.all }),
+  });
+}
+
+export function useCreateOfflineLessonOrder() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      institutionId: string;
+      command: CreateOfflineLessonOrderRequest;
+      idempotencyKey: string;
+    }) => lessonCommerceApi.createOffline(input.institutionId, input.command, input.idempotencyKey),
+    onSuccess: () => client.invalidateQueries({ queryKey: orderKeys.all }),
+  });
+}
+
+export function useLessonReceipt() {
+  return useMutation({
+    mutationFn: (input: { institutionId: string; orderId: string }) =>
+      lessonCommerceApi.receipt(input.institutionId, input.orderId),
   });
 }

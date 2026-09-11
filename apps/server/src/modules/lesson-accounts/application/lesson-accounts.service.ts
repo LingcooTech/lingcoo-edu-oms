@@ -73,6 +73,7 @@ export interface LessonPurchaseGrantCommand {
   packageId: string;
   packageVersion: number;
   orderNo: string;
+  source: 'online_purchase' | 'offline_purchase';
 }
 
 export interface LessonPurchaseGrantLedger {
@@ -341,7 +342,13 @@ export class LessonAccountsService implements LessonConsumptionLedger, LessonPur
     context: LessonMutationContext,
   ): Promise<LessonAccountMutationResult> {
     const result = await this.idempotency.execute(
-      { operation: 'lesson-account.online-purchase', resultSchema: grantLessonUnitsResultSchema },
+      {
+        operation:
+          input.source === 'online_purchase'
+            ? 'lesson-account.online-purchase'
+            : 'lesson-account.offline-purchase',
+        resultSchema: grantLessonUnitsResultSchema,
+      },
       {
         scope: `lesson-account:${input.institutionId}:${input.studentId}`,
         key: `lesson-order:${input.orderNo}`,
@@ -365,9 +372,9 @@ export class LessonAccountsService implements LessonConsumptionLedger, LessonPur
           account,
           {
             movementType: 'grant',
-            sourceType: 'online_purchase',
+            sourceType: input.source,
             sourceReference: input.orderNo,
-            reason: `线上购课订单 ${input.orderNo}`,
+            reason: `${input.source === 'online_purchase' ? '线上' : '线下'}购课订单 ${input.orderNo}`,
             baseUnits: packageVersion.baseUnits,
             bonusUnits: packageVersion.bonusUnits,
             packageVersion,

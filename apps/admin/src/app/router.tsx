@@ -223,6 +223,18 @@ export function AppRouter() {
             <Route element={<RequirePermission permissions={['education.orders.read']} />}>
               <Route path="orders" element={<OrdersPage />} />
             </Route>
+            <Route element={<RequirePermission permissions={['settings.read']} />}>
+              <Route
+                path="business-settings"
+                element={
+                  <SettingsPage
+                    title="业务开关"
+                    description="控制课时销售渠道。线下收款必须通过订单补录，不通过业务开关绕过订单。"
+                    includedGroups={['education-commerce']}
+                  />
+                }
+              />
+            </Route>
             <Route element={<RequirePermission permissions={['accounts.read']} />}>
               <Route path="access/users" element={<UsersPage />} />
             </Route>

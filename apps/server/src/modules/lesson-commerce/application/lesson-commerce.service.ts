@@ -3,9 +3,11 @@ import { randomBytes } from 'node:crypto';
 import { ApiError } from '@lingcoo-tech/http';
 import {
   lessonOrderSchema,
+  type CreateOfflineLessonOrderRequest,
   type CreateLessonOrderRequest,
   type LessonOrder,
   type LessonOrderListQuery,
+  type LessonReceipt,
   type MiniStudentListQuery,
   type PaymentIntentDetail,
   type PaymentProvider,
@@ -17,9 +19,10 @@ import type { IdempotencyService } from '../../idempotency/public.js';
 import type { LessonPurchaseGrantLedger } from '../../lesson-accounts/public.js';
 import type { LessonPackageDirectory } from '../../lesson-products/public.js';
 import type { PaymentFact, PaymentFactReceiver } from '../../payments/public.js';
-import type { GuardianSelfDirectory } from '../../people/public.js';
+import type { SettingsReader } from '../../settings/public.js';
 import type {
   LessonCommerceInstitutionDirectory,
+  LessonCommercePeopleDirectory,
   LessonCommercePayments,
   WechatMiniPayerDirectory,
 } from '../domain/model.js';
@@ -35,13 +38,14 @@ export class LessonCommerceService implements PaymentFactReceiver {
     private readonly database: DatabaseHandle,
     private readonly repository: LessonCommerceRepository,
     private readonly institutions: LessonCommerceInstitutionDirectory,
-    private readonly people: GuardianSelfDirectory,
+    private readonly people: LessonCommercePeopleDirectory,
     private readonly products: LessonPackageDirectory,
     private readonly lessons: LessonPurchaseGrantLedger,
     private readonly payments: LessonCommercePayments,
     private readonly payers: WechatMiniPayerDirectory,
     private readonly idempotency: IdempotencyService,
     private readonly audit: AuditWriter,
+    private readonly settings: SettingsReader,
     private readonly clock: () => Date = () => new Date(),
   ) {}
 
@@ -53,7 +57,8 @@ export class LessonCommerceService implements PaymentFactReceiver {
     return this.institutions.list({ page: 1, pageSize: 100, status: 'active' }, null);
   }
 
-  listPackages(institutionId: string) {
+  async listPackages(institutionId: string) {
+    if (!(await this.onlineSalesEnabled())) return [];
     return this.products.listPurchasable(institutionId, this.clock());
   }
 
@@ -63,7 +68,7 @@ export class LessonCommerceService implements PaymentFactReceiver {
       institutionId: string;
       guardianName: string;
       relationship: string;
-      student: Parameters<GuardianSelfDirectory['onboardStudentForGuardian']>[2];
+      student: Parameters<LessonCommercePeopleDirectory['onboardStudentForGuardian']>[2];
     },
     context: AuditContext,
   ) {
@@ -82,6 +87,7 @@ export class LessonCommerceService implements PaymentFactReceiver {
     idempotencyKey: string,
     context: ActorContext,
   ): Promise<{ order: LessonOrder; payment: PaymentIntentDetail }> {
+    await this.assertOnlineSalesEnabled();
     const provider = input.provider ?? 'mock';
     const claimed = await this.idempotency.execute(
       { operation: 'lesson-commerce.create-order', resultSchema: lessonOrderSchema },
@@ -119,9 +125,16 @@ export class LessonCommerceService implements PaymentFactReceiver {
             packageName: product.name,
             baseUnits: product.baseUnits,
             bonusUnits: product.bonusUnits,
+            channel: 'online',
+            listedAmountMinor: product.priceAmount,
             amountMinor: product.priceAmount,
             currency: product.currency,
             provider,
+            paymentMethod: provider === 'wechat_pay' ? 'wechat_pay' : 'mock',
+            paymentReference: null,
+            paymentNote: null,
+            priceAdjustmentReason: null,
+            receiptNo: this.receiptNo(),
             expiresAt: new Date(this.clock().getTime() + 30 * 60_000),
           },
           transaction,
@@ -154,7 +167,11 @@ export class LessonCommerceService implements PaymentFactReceiver {
 
     let order = await this.requireOrder(claimed.value.id);
     this.assertOwned(order, identityUserId);
-    if (order.status === 'pending_payment' && order.expiresAt.getTime() <= this.clock().getTime()) {
+    if (
+      order.status === 'pending_payment' &&
+      order.expiresAt &&
+      order.expiresAt.getTime() <= this.clock().getTime()
+    ) {
       const paymentIntentId = order.paymentIntentId;
       if (paymentIntentId) {
         const payment = await this.payments.reconcile(paymentIntentId, context);
@@ -185,10 +202,153 @@ export class LessonCommerceService implements PaymentFactReceiver {
     return { order: this.view(await this.requireOrder(order.id)), payment };
   }
 
+  async createOfflineOrder(
+    institutionId: string,
+    input: CreateOfflineLessonOrderRequest,
+    idempotencyKey: string,
+    context: ActorContext,
+  ): Promise<LessonOrder> {
+    const claimed = await this.idempotency.execute(
+      { operation: 'lesson-commerce.create-offline-order', resultSchema: lessonOrderSchema },
+      {
+        scope: `institution-orders:${institutionId}`,
+        key: idempotencyKey,
+        request: input,
+        actorId: context.actorId,
+      },
+      async (transaction) => {
+        await this.institutions.assertActiveInstitution(institutionId, transaction);
+        let student: { id: string; fullName: string };
+        let guardian: { id: string; fullName: string };
+        if (input.student.kind === 'new') {
+          const onboarded = await this.people.onboardStudentInTransaction(
+            institutionId,
+            {
+              fullName: input.student.profile.fullName,
+              preferredName: input.student.profile.preferredName ?? null,
+              grade: input.student.profile.grade ?? null,
+              school: input.student.profile.school ?? null,
+              gender: input.student.profile.gender ?? 'unknown',
+              birthDate: input.student.profile.birthDate ?? null,
+              notes: input.student.profile.notes ?? null,
+            },
+            {
+              fullName: input.student.guardian.fullName,
+              phone: input.student.guardian.phone ?? null,
+              email: input.student.guardian.email ?? null,
+              identityUserId: input.student.guardian.identityUserId ?? null,
+              notes: input.student.guardian.notes ?? null,
+              relationship: input.student.guardian.relationship,
+              isPrimary: true,
+            },
+            context,
+            transaction,
+          );
+          student = onboarded.student;
+          guardian = onboarded.guardian.guardian;
+        } else {
+          const existing = await this.people.getStudentGuardianSnapshot(
+            institutionId,
+            input.student.studentId,
+            input.student.guardianId,
+            transaction,
+          );
+          student = existing.student;
+          guardian = existing.guardian;
+        }
+        const product = await this.products.getActiveVersion(
+          institutionId,
+          input.packageId,
+          transaction,
+        );
+        if (input.paidAmountMinor !== product.priceAmount && !input.priceAdjustmentReason?.trim()) {
+          throw new ApiError(
+            400,
+            'OFFLINE_ORDER_PRICE_ADJUSTMENT_REASON_REQUIRED',
+            '实收金额与课时包标价不一致时必须填写调价原因',
+          );
+        }
+        const now = this.clock();
+        const order = await this.repository.create(
+          {
+            orderNo: this.orderNo(),
+            institutionId,
+            studentId: student.id,
+            studentName: student.fullName,
+            guardianId: guardian.id,
+            guardianName: guardian.fullName,
+            createdByUserId: context.actorId,
+            packageId: product.packageId,
+            packageVersionId: product.id,
+            packageVersion: product.version,
+            packageName: product.name,
+            baseUnits: product.baseUnits,
+            bonusUnits: product.bonusUnits,
+            channel: 'offline',
+            listedAmountMinor: product.priceAmount,
+            amountMinor: input.paidAmountMinor,
+            currency: product.currency,
+            provider: null,
+            paymentMethod: input.paymentMethod,
+            paymentReference: input.paymentReference ?? null,
+            paymentNote: input.paymentNote ?? null,
+            priceAdjustmentReason: input.priceAdjustmentReason ?? null,
+            receiptNo: this.receiptNo(),
+            status: 'paid_pending_grant',
+            paidAt: new Date(input.receivedAt),
+            expiresAt: null,
+          },
+          transaction,
+        );
+        await this.audit.record(
+          {
+            ...context,
+            category: 'business',
+            action: 'lesson-order.offline-payment-recorded',
+            resourceType: 'lesson.order',
+            resourceId: order.id,
+            changes: [
+              { field: 'status', before: null, after: order.status },
+              { field: 'amountMinor', before: null, after: order.amountMinor },
+            ],
+            metadata: {
+              orderNo: order.orderNo,
+              institutionId,
+              studentId: order.studentId,
+              packageVersion: order.packageVersion,
+              paymentMethod: order.paymentMethod,
+              recordedAt: now.toISOString(),
+            },
+          },
+          transaction,
+        );
+        return this.view(order);
+      },
+    );
+
+    let order = await this.requireOrder(claimed.value.id);
+    if (order.status === 'paid_pending_grant' || order.status === 'grant_failed') {
+      try {
+        await this.grant(order, context);
+      } catch {
+        // The paid fact and failure are durable. Return the order so the operator sees
+        // the recoverable state instead of attempting another sale.
+      }
+      order = await this.requireOrder(order.id);
+    }
+    return this.view(order);
+  }
+
   async getForGuardian(identityUserId: string, orderId: string) {
     const order = await this.requireOrder(orderId);
     this.assertOwned(order, identityUserId);
     return this.view(order);
+  }
+
+  async receiptForGuardian(identityUserId: string, orderId: string): Promise<LessonReceipt> {
+    const order = await this.requireOrder(orderId);
+    this.assertOwned(order, identityUserId);
+    return this.receipt(order);
   }
 
   async listForGuardian(identityUserId: string, input: LessonOrderListQuery) {
@@ -200,6 +360,14 @@ export class LessonCommerceService implements PaymentFactReceiver {
   async listForInstitution(institutionId: string, input: LessonOrderListQuery) {
     const result = await this.repository.listForInstitution(institutionId, input);
     return this.page(result, input);
+  }
+
+  async receiptForInstitution(institutionId: string, orderId: string): Promise<LessonReceipt> {
+    const order = await this.requireOrder(orderId);
+    if (order.institutionId !== institutionId) {
+      throw new ApiError(404, 'LESSON_ORDER_NOT_FOUND', '购课订单不存在');
+    }
+    return this.receipt(order);
   }
 
   async syncForGuardian(identityUserId: string, orderId: string, context: ActorContext) {
@@ -330,6 +498,7 @@ export class LessonCommerceService implements PaymentFactReceiver {
           packageId: order.packageId,
           packageVersion: order.packageVersion,
           orderNo: order.orderNo,
+          source: order.channel === 'online' ? 'online_purchase' : 'offline_purchase',
         },
         context,
       );
@@ -474,9 +643,16 @@ export class LessonCommerceService implements PaymentFactReceiver {
       packageName: record.packageName,
       baseUnits: record.baseUnits,
       bonusUnits: record.bonusUnits,
+      channel: record.channel,
+      listedAmountMinor: record.listedAmountMinor,
       amountMinor: record.amountMinor,
       currency: record.currency,
       provider: record.provider,
+      paymentMethod: record.paymentMethod,
+      paymentReference: record.paymentReference,
+      paymentNote: record.paymentNote,
+      priceAdjustmentReason: record.priceAdjustmentReason,
+      receiptNo: record.receiptNo,
       paymentIntentId: record.paymentIntentId,
       grantMovementId: record.grantMovementId,
       status: record.status,
@@ -485,7 +661,7 @@ export class LessonCommerceService implements PaymentFactReceiver {
       paidAt: record.paidAt?.toISOString() ?? null,
       completedAt: record.completedAt?.toISOString() ?? null,
       closedAt: record.closedAt?.toISOString() ?? null,
-      expiresAt: record.expiresAt.toISOString(),
+      expiresAt: record.expiresAt?.toISOString() ?? null,
       revision: record.revision,
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
@@ -500,10 +676,107 @@ export class LessonCommerceService implements PaymentFactReceiver {
     return `LE${stamp}${randomBytes(6).toString('hex').toUpperCase()}`;
   }
 
+  private receiptNo() {
+    const stamp = this.clock()
+      .toISOString()
+      .replace(/[-:TZ.]/g, '')
+      .slice(0, 14);
+    return `RC${stamp}${randomBytes(5).toString('hex').toUpperCase()}`;
+  }
+
+  private async receipt(order: LessonCommerceOrderRecord): Promise<LessonReceipt> {
+    if (!['completed', 'refunding', 'refunded'].includes(order.status)) {
+      throw new ApiError(409, 'LESSON_ORDER_RECEIPT_NOT_READY', '订单完成后才能生成收据');
+    }
+    const [organization, institution] = await Promise.all([
+      this.institutions.getProfile(),
+      this.institutions.getInstitution(order.institutionId),
+    ]);
+    return {
+      receiptNo: order.receiptNo,
+      title: '收据',
+      issuedAt: (order.completedAt ?? order.paidAt ?? order.updatedAt).toISOString(),
+      settlementMark: order.paymentMethod === 'cash' ? '现金收讫' : '款项已收',
+      amountUppercase: amountInChineseUppercase(order.amountMinor),
+      organization: {
+        name: organization.name,
+        brandName: organization.brandName,
+        logoUrl: organization.logoUrl,
+        phone: organization.phone,
+        address: organization.address,
+      },
+      institution: {
+        id: institution.id,
+        name: institution.name,
+        phone: institution.contactPhone,
+        address: institution.address,
+      },
+      order: this.view(order),
+    };
+  }
+
+  private async assertOnlineSalesEnabled() {
+    if (!(await this.onlineSalesEnabled())) {
+      throw new ApiError(409, 'ONLINE_LESSON_SALES_DISABLED', '当前未开放小程序在线购买课时包');
+    }
+  }
+
+  private async onlineSalesEnabled() {
+    return (
+      (await this.settings.getValue<boolean>('education-commerce.online-sales-enabled')) !== false
+    );
+  }
+
   private failure(error: unknown) {
     if (error instanceof ApiError) {
       return { code: error.code, message: error.message };
     }
     return { code: 'LESSON_GRANT_FAILED', message: '支付成功，课时发放失败，系统将自动重试' };
   }
+}
+
+function amountInChineseUppercase(amountMinor: number): string {
+  const digits = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖'];
+  const units = ['', '拾', '佰', '仟'];
+  const sections = ['', '万', '亿'];
+  const integer = Math.floor(amountMinor / 100);
+  const fraction = amountMinor % 100;
+
+  const sectionText = (value: number) => {
+    let result = '';
+    let zero = false;
+    for (let index = 0; index < 4; index += 1) {
+      const digit = value % 10;
+      if (digit === 0) {
+        zero = result.length > 0;
+      } else {
+        result = `${zero ? '零' : ''}${digits[digit]}${units[index]}${result}`;
+        zero = false;
+      }
+      value = Math.floor(value / 10);
+    }
+    return result;
+  };
+
+  let remaining = integer;
+  let integerText = '';
+  let sectionIndex = 0;
+  let pendingZero = false;
+  while (remaining > 0) {
+    const section = remaining % 10_000;
+    if (section === 0) {
+      pendingZero = integerText.length > 0;
+    } else {
+      const prefix = sectionText(section);
+      integerText = `${prefix}${sections[sectionIndex]}${pendingZero ? '零' : ''}${integerText}`;
+      pendingZero = section < 1_000;
+    }
+    remaining = Math.floor(remaining / 10_000);
+    sectionIndex += 1;
+  }
+  const yuan = `${integerText || '零'}元`;
+  const jiao = Math.floor(fraction / 10);
+  const fen = fraction % 10;
+  if (jiao === 0 && fen === 0) return `${yuan}整`;
+  return `${yuan}${jiao ? `${digits[jiao]}角` : fen ? '零' : ''}${fen ? `${digits[fen]}分` : ''}`;
 }

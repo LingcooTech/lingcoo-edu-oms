@@ -1,10 +1,13 @@
 import {
   idSchema,
+  createOfflineLessonOrderRequestSchema,
   lessonOrderListQuerySchema,
   lessonOrderPageSchema,
   lessonOrderSchema,
+  lessonReceiptSchema,
   retryLessonOrderGrantRequestSchema,
   type LessonOrderListQuery,
+  type CreateOfflineLessonOrderRequest,
   type RetryLessonOrderGrantRequest,
 } from '@lingcoo-edu-oms/contracts';
 
@@ -41,6 +44,25 @@ export function createLessonCommerceApi(client: ApiClient) {
         path: `${collectionPath(institutionId)}/${pathId(orderId)}/actions/retry-grant`,
         body: retryLessonOrderGrantRequestSchema.parse(input),
         schema: lessonOrderSchema,
+      });
+    },
+    createOffline(
+      institutionId: string,
+      input: CreateOfflineLessonOrderRequest,
+      idempotencyKey: string,
+    ) {
+      return client.request({
+        method: 'POST',
+        path: `${collectionPath(institutionId)}/offline`,
+        headers: { 'idempotency-key': idempotencyKey },
+        body: createOfflineLessonOrderRequestSchema.parse(input),
+        schema: lessonOrderSchema,
+      });
+    },
+    receipt(institutionId: string, orderId: string) {
+      return client.request({
+        path: `${collectionPath(institutionId)}/${pathId(orderId)}/receipt`,
+        schema: lessonReceiptSchema,
       });
     },
   };

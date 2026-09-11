@@ -4,6 +4,18 @@ import type { SettingDefinition } from './model.js';
 
 export const CORE_SETTINGS: SettingDefinition[] = [
   {
+    key: 'education-commerce.online-sales-enabled',
+    group: 'education-commerce',
+    groupLabel: '课时销售',
+    groupOrder: 5,
+    label: '允许小程序在线购买课时包',
+    description: '组织级线上销售总开关；关闭后小程序不展示可购课时包，也不能创建新的线上订单。',
+    kind: 'public',
+    schema: z.boolean(),
+    defaultValue: true,
+    control: 'boolean',
+  },
+  {
     key: 'application.name',
     group: 'application',
     groupLabel: '应用信息',

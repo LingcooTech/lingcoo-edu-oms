@@ -5,11 +5,12 @@ import type { AuditWriter } from '../audit/public.js';
 import type { IdempotencyService } from '../idempotency/public.js';
 import type { LessonPurchaseGrantLedger } from '../lesson-accounts/public.js';
 import type { LessonPackageDirectory } from '../lesson-products/public.js';
-import type { GuardianSelfDirectory } from '../people/public.js';
+import type { SettingsReader } from '../settings/public.js';
 import { LessonCommerceService } from './application/lesson-commerce.service.js';
 import { registerLessonCommerceRoutes } from './api/routes.js';
 import type {
   LessonCommerceInstitutionDirectory,
+  LessonCommercePeopleDirectory,
   LessonCommercePayments,
   WechatMiniPayerDirectory,
 } from './domain/model.js';
@@ -18,13 +19,14 @@ import { LessonCommerceRepository } from './infrastructure/persistence/lesson-co
 export interface LessonCommerceDependencies {
   database: DatabaseHandle;
   institutions: LessonCommerceInstitutionDirectory;
-  people: GuardianSelfDirectory;
+  people: LessonCommercePeopleDirectory;
   products: LessonPackageDirectory;
   lessons: LessonPurchaseGrantLedger;
   payments: LessonCommercePayments;
   payers: WechatMiniPayerDirectory;
   idempotency: IdempotencyService;
   audit: AuditWriter;
+  settings: SettingsReader;
   service?: LessonCommerceService;
 }
 
@@ -42,6 +44,8 @@ export function createLessonCommerceService(dependencies: LessonCommerceDependen
       dependencies.payers,
       dependencies.idempotency,
       dependencies.audit,
+      dependencies.settings,
+      undefined,
     )
   );
 }

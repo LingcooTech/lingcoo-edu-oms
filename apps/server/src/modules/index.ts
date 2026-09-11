@@ -234,6 +234,7 @@ export async function registerApplicationModules(
     payers: wechatMiniAuth,
     idempotency,
     audit,
+    settings: settings.service,
   });
   lessonCommerceRef.current = lessonCommerce;
   const lessonSessions = createLessonSessionsService({
@@ -346,6 +347,7 @@ export async function registerApplicationModules(
       payers: wechatMiniAuth,
       idempotency,
       audit,
+      settings: settings.service,
       service: lessonCommerce,
     }),
   );

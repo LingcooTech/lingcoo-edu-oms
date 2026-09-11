@@ -6,16 +6,15 @@ export type GrantLessonUnitsFormValues = {
   templateId?: string;
   baseUnits?: number;
   bonusUnits?: number;
-  source: Exclude<LessonBatchSourceType, 'adjustment' | 'online_purchase'>;
+  source: Exclude<LessonBatchSourceType, 'adjustment' | 'online_purchase' | 'offline_purchase'>;
   sourceReference?: string;
   reason: string;
 };
 
 const grantSourceLabels: Record<
-  Exclude<LessonBatchSourceType, 'adjustment' | 'online_purchase'>,
+  Exclude<LessonBatchSourceType, 'adjustment' | 'online_purchase' | 'offline_purchase'>,
   string
 > = {
-  offline_purchase: '线下购课登记',
   gift: '赠送',
   makeup: '补发',
   migration_opening: '迁移期初',
@@ -50,7 +49,7 @@ export function GrantLessonUnitsModal({
         if (visible) {
           form.setFieldsValue({
             mode: packages.length ? 'template' : 'custom',
-            source: 'offline_purchase',
+            source: 'gift',
             baseUnits: 10,
             bonusUnits: 0,
           });
@@ -99,7 +98,7 @@ export function GrantLessonUnitsModal({
         <Form.Item
           name="sourceReference"
           label="来源编号"
-          tooltip="例如线下单据号；同一来源编号不会重复发放"
+          tooltip="例如赠送审批号；同一来源编号不会重复发放"
         >
           <Input placeholder="可选" />
         </Form.Item>

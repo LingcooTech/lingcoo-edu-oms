@@ -92,6 +92,15 @@ export interface StudentOnboardingDirectory {
     context: AuditContext,
     transaction: DatabaseTransaction,
   ): Promise<{ student: InstitutionStudent; guardian: GuardianBinding }>;
+  getStudentGuardianSnapshot(
+    institutionId: string,
+    studentId: string,
+    guardianId: string,
+    executor?: DatabaseExecutor,
+  ): Promise<{
+    student: { id: string; fullName: string };
+    guardian: { id: string; fullName: string };
+  }>;
 }
 
 export interface GuardianSelfDirectory {
@@ -383,6 +392,30 @@ export class PeopleService
         transaction,
       ),
     );
+  }
+
+  async getStudentGuardianSnapshot(
+    institutionId: string,
+    studentId: string,
+    guardianId: string,
+    executor: DatabaseExecutor = this.database.db,
+  ) {
+    await this.assertActiveStudentInstitution(studentId, institutionId, executor);
+    const bindings = await this.repository.listGuardianBindings(studentId, executor);
+    const matched = bindings.find(
+      ({ binding, guardian }) =>
+        binding.guardianId === guardianId &&
+        binding.status === 'active' &&
+        guardian.status === 'active',
+    );
+    if (!matched) {
+      throw new ApiError(409, 'ACTIVE_GUARDIAN_BINDING_REQUIRED', '请选择该学员已生效的家长');
+    }
+    const student = await this.getActiveStudentSnapshot(studentId, institutionId, executor);
+    return {
+      student,
+      guardian: { id: matched.guardian.id, fullName: matched.guardian.fullName },
+    };
   }
 
   async onboardStudentInTransaction(

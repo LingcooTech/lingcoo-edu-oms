@@ -120,9 +120,9 @@ describe('P3 lesson API clients', () => {
       studentId,
       {
         templateId: packageId,
-        source: 'offline_purchase',
-        sourceReference: 'OFFLINE-1',
-        reason: '线下购课',
+        source: 'gift',
+        sourceReference: 'GIFT-1',
+        reason: '活动赠送',
       },
       { expectedAccountRevision: 0, idempotencyKey: 'grant-0001' },
     );

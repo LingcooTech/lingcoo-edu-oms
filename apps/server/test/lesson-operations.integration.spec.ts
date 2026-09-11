@@ -159,9 +159,9 @@ suite('P3 institution lesson accounts', () => {
       headers: mutationHeaders(1, grantKey),
       payload: {
         templateId: packageId,
-        source: 'offline_purchase',
-        sourceReference: 'P3-OFFLINE-001',
-        reason: '线下购买通用课时',
+        source: 'gift',
+        sourceReference: 'P3-GIFT-001',
+        reason: '活动赠送通用课时',
       },
     });
     expect(firstGrant.statusCode, firstGrant.body).toBe(201);
@@ -177,9 +177,9 @@ suite('P3 institution lesson accounts', () => {
       headers: mutationHeaders(1, grantKey),
       payload: {
         templateId: packageId,
-        source: 'offline_purchase',
-        sourceReference: 'P3-OFFLINE-001',
-        reason: '线下购买通用课时',
+        source: 'gift',
+        sourceReference: 'P3-GIFT-001',
+        reason: '活动赠送通用课时',
       },
     });
     expect(replay.statusCode, replay.body).toBe(201);
@@ -191,8 +191,8 @@ suite('P3 institution lesson accounts', () => {
       headers: mutationHeaders(2),
       payload: {
         templateId: packageId,
-        source: 'offline_purchase',
-        sourceReference: 'P3-OFFLINE-001',
+        source: 'gift',
+        sourceReference: 'P3-GIFT-001',
         reason: '重复来源测试',
       },
     });
@@ -209,7 +209,7 @@ suite('P3 institution lesson accounts', () => {
         bonusUnits: 0,
         source: 'custom',
         sourceReference: 'P3-CUSTOM-020',
-        reason: '续课登记',
+        reason: '人工校正补发',
       },
     });
     expect(secondGrant.statusCode, secondGrant.body).toBe(201);
