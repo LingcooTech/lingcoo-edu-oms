@@ -1,0 +1,1 @@
+ALTER TABLE "lesson_package_templates" ADD CONSTRAINT "lesson_package_templates_online_price_check" CHECK (not "lesson_package_templates"."online_sale_enabled" or "lesson_package_templates"."price_amount" > 0);

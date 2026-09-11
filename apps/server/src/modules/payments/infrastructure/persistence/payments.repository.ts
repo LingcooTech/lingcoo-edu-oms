@@ -130,11 +130,17 @@ export class PaymentsRepository {
     status: string,
     queried: boolean,
     executor: DatabaseTransaction,
+    providerMetadata?: Record<string, unknown>,
   ) {
     const now = new Date();
     const [record] = await executor
       .update(paymentProviderTransactions)
-      .set({ status, updatedAt: now, lastQueriedAt: queried ? now : undefined })
+      .set({
+        status,
+        updatedAt: now,
+        lastQueriedAt: queried ? now : undefined,
+        ...(providerMetadata === undefined ? {} : { providerMetadata }),
+      })
       .where(eq(paymentProviderTransactions.id, id))
       .returning();
     return record ?? null;

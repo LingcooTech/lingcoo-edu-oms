@@ -11,6 +11,7 @@ import {
   type PaymentProviderAdapter,
 } from './domain/model.js';
 import { MockPaymentProvider } from './infrastructure/mock-payment.provider.js';
+import { WechatPayV3ProviderAdapter } from './infrastructure/wechat-pay-v3.provider.js';
 import { PaymentsRepository } from './infrastructure/persistence/payments.repository.js';
 
 export interface PaymentsModuleDependencies {
@@ -23,7 +24,10 @@ export interface PaymentsModuleDependencies {
 }
 
 export function createPaymentsService(dependencies: PaymentsModuleDependencies) {
-  const providers = dependencies.providers ?? [new MockPaymentProvider(dependencies.settings)];
+  const providers = dependencies.providers ?? [
+    new MockPaymentProvider(dependencies.settings),
+    new WechatPayV3ProviderAdapter(dependencies.settings),
+  ];
   return new PaymentsService(
     dependencies.database,
     new PaymentsRepository(dependencies.database),

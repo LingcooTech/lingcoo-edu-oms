@@ -128,6 +128,9 @@ const LessonAccountsPage = lazy(() =>
     default: module.LessonAccountsPage,
   })),
 );
+const OrdersPage = lazy(() =>
+  import('../features/orders/OrdersPage').then((module) => ({ default: module.OrdersPage })),
+);
 const LessonSessionsPage = lazy(() =>
   import('../features/sessions/LessonSessionsPage').then((module) => ({
     default: module.LessonSessionsPage,
@@ -216,6 +219,9 @@ export function AppRouter() {
                 path="lesson-movements"
                 element={<LessonAccountsPage initialTab="movements" />}
               />
+            </Route>
+            <Route element={<RequirePermission permissions={['education.orders.read']} />}>
+              <Route path="orders" element={<OrdersPage />} />
             </Route>
             <Route element={<RequirePermission permissions={['accounts.read']} />}>
               <Route path="access/users" element={<UsersPage />} />

@@ -16,6 +16,7 @@ import {
   Modal,
   Select,
   Space,
+  Switch,
   Table,
   Tag,
   Typography,
@@ -33,6 +34,10 @@ type PackageFormValues = {
   description?: string;
   baseUnits: number;
   bonusUnits: number;
+  priceYuan: number;
+  onlineSaleEnabled: boolean;
+  saleStartsAt?: string;
+  saleEndsAt?: string;
   status?: LessonPackageStatus;
 };
 
@@ -43,6 +48,36 @@ function errorMessage(error: unknown) {
 function nullable(value?: string): string | null {
   const normalized = value?.trim();
   return normalized ? normalized : null;
+}
+
+function yuanToFen(value: number): number {
+  return Math.round(value * 100);
+}
+
+function formatPrice(priceAmount: number): string {
+  return `¥${(priceAmount / 100).toFixed(2)}`;
+}
+
+function isoToLocalDateTime(value: string | null): string | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  const timezoneOffset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 16);
+}
+
+function localDateTimeToIso(value?: string): string | null {
+  return value ? new Date(value).toISOString() : null;
+}
+
+function formatSaleWindow(record: LessonPackage): string {
+  if (!record.saleStartsAt && !record.saleEndsAt) return '长期有效';
+  const format = (value: string | null) =>
+    value
+      ? new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' }).format(
+          new Date(value),
+        )
+      : '即刻';
+  return `${format(record.saleStartsAt)} 至 ${record.saleEndsAt ? format(record.saleEndsAt) : '长期'}`;
 }
 
 export function LessonPackagesPage() {
@@ -166,7 +201,7 @@ export function LessonPackagesPage() {
           <Table<LessonPackage>
             rowKey="id"
             dataSource={packages.data?.items ?? []}
-            scroll={{ x: 760 }}
+            scroll={{ x: 1_040 }}
             pagination={{
               current: packages.data?.page ?? page,
               pageSize: packages.data?.pageSize ?? 20,
@@ -194,6 +229,28 @@ export function LessonPackagesPage() {
                 width: 100,
                 render: (_, record) => (
                   <Typography.Text strong>{record.baseUnits + record.bonusUnits}</Typography.Text>
+                ),
+              },
+              {
+                title: '售价',
+                dataIndex: 'priceAmount',
+                width: 120,
+                render: (value) => formatPrice(value),
+              },
+              {
+                title: '线上销售',
+                width: 210,
+                render: (_, record) => (
+                  <Space direction="vertical" size={0}>
+                    <Tag color={record.onlineSaleEnabled ? 'blue' : 'default'}>
+                      {record.onlineSaleEnabled ? '线上可售' : '未上架'}
+                    </Tag>
+                    {record.onlineSaleEnabled ? (
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {formatSaleWindow(record)}
+                      </Typography.Text>
+                    ) : null}
+                  </Space>
                 ),
               },
               {
@@ -249,6 +306,10 @@ export function LessonPackagesPage() {
               description: nullable(values.description),
               baseUnits: values.baseUnits,
               bonusUnits: values.bonusUnits,
+              priceAmount: yuanToFen(values.priceYuan),
+              onlineSaleEnabled: values.onlineSaleEnabled,
+              saleStartsAt: localDateTimeToIso(values.saleStartsAt),
+              saleEndsAt: localDateTimeToIso(values.saleEndsAt),
             };
             if (editing) {
               const input: UpdateLessonPackageRequest = {
@@ -311,9 +372,19 @@ function PackageModal({
                 description: value.description ?? undefined,
                 baseUnits: value.baseUnits,
                 bonusUnits: value.bonusUnits,
+                priceYuan: value.priceAmount / 100,
+                onlineSaleEnabled: value.onlineSaleEnabled,
+                saleStartsAt: isoToLocalDateTime(value.saleStartsAt),
+                saleEndsAt: isoToLocalDateTime(value.saleEndsAt),
                 status: value.status,
               }
-            : { baseUnits: 10, bonusUnits: 0, status: 'active' },
+            : {
+                baseUnits: 10,
+                bonusUnits: 0,
+                priceYuan: 0,
+                onlineSaleEnabled: false,
+                status: 'active',
+              },
         );
       }}
     >
@@ -331,6 +402,25 @@ function PackageModal({
           </Form.Item>
           <Form.Item name="bonusUnits" label="赠送课时" rules={[{ type: 'number', min: 0 }]}>
             <InputNumber min={0} precision={0} style={{ width: 180 }} />
+          </Form.Item>
+        </Space>
+        <Form.Item
+          name="priceYuan"
+          label="售价（元）"
+          extra="以人民币分保存；设置为 0 时无法线上购买。"
+          rules={[{ required: true, type: 'number', min: 0 }]}
+        >
+          <InputNumber min={0} precision={2} step={0.01} style={{ width: 180 }} />
+        </Form.Item>
+        <Form.Item name="onlineSaleEnabled" label="线上销售" valuePropName="checked">
+          <Switch checkedChildren="上架" unCheckedChildren="下架" />
+        </Form.Item>
+        <Space align="start" size={20}>
+          <Form.Item name="saleStartsAt" label="销售开始时间（可选）">
+            <Input type="datetime-local" style={{ width: 230 }} />
+          </Form.Item>
+          <Form.Item name="saleEndsAt" label="销售结束时间（可选）">
+            <Input type="datetime-local" style={{ width: 230 }} />
           </Form.Item>
         </Space>
         {value ? (

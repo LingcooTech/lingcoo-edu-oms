@@ -10,16 +10,30 @@ import type { DatabaseExecutor, DatabaseHandle } from '../../../database/databas
 import type { AuditContext, AuditWriter } from '../../audit/public.js';
 import type { InstitutionDirectory } from '../../organization/public.js';
 import type { LessonPackageVersionSnapshot } from '../domain/model.js';
+import { assertValidLessonPackageOnlineSaleWindow } from '../domain/online-sale.js';
 import {
   LessonProductsRepository,
   type LessonPackageRecord,
 } from '../infrastructure/persistence/lesson-products.repository.js';
 
 export interface LessonPackageDirectory {
+  listPurchasable(institutionId: string, now?: Date): Promise<LessonPackage[]>;
+  getVersion(
+    institutionId: string,
+    packageId: string,
+    version: number,
+    executor: DatabaseExecutor,
+  ): Promise<LessonPackageVersionSnapshot>;
   getActiveVersion(
     institutionId: string,
     packageId: string,
     executor: DatabaseExecutor,
+  ): Promise<LessonPackageVersionSnapshot>;
+  getPurchasableVersion(
+    institutionId: string,
+    packageId: string,
+    executor: DatabaseExecutor,
+    now?: Date,
   ): Promise<LessonPackageVersionSnapshot>;
 }
 
@@ -47,19 +61,63 @@ export class LessonProductsService implements LessonPackageDirectory {
     return this.view(record);
   }
 
+  async listPurchasable(institutionId: string, now: Date = new Date()): Promise<LessonPackage[]> {
+    const records = await this.repository.listPurchasable(institutionId, now);
+    return records.map((record) => this.view(record));
+  }
+
   async getActiveVersion(
     institutionId: string,
     packageId: string,
     executor: DatabaseExecutor,
   ): Promise<LessonPackageVersionSnapshot> {
-    const record = await this.repository.findForInstitution(institutionId, packageId, executor);
-    if (!record) throw new ApiError(404, 'LESSON_PACKAGE_NOT_FOUND', '课时包不存在');
+    const { record, version } = await this.currentVersion(institutionId, packageId, executor);
     if (record.status !== 'active') {
       throw new ApiError(409, 'LESSON_PACKAGE_INACTIVE', '课时包已停用，不能用于发放');
     }
-    const version = await this.repository.findVersion(record.id, record.revision, executor);
-    if (!version) {
-      throw new ApiError(409, 'LESSON_PACKAGE_VERSION_MISSING', '课时包版本快照缺失');
+    return version;
+  }
+
+  async getVersion(
+    institutionId: string,
+    packageId: string,
+    version: number,
+    executor: DatabaseExecutor,
+  ): Promise<LessonPackageVersionSnapshot> {
+    const record = await this.repository.findForInstitution(institutionId, packageId, executor);
+    if (!record) throw new ApiError(404, 'LESSON_PACKAGE_NOT_FOUND', '课时包不存在');
+    const snapshot = await this.repository.findVersion(record.id, version, executor);
+    if (!snapshot) {
+      throw new ApiError(404, 'LESSON_PACKAGE_VERSION_NOT_FOUND', '课时包版本快照不存在');
+    }
+    return snapshot;
+  }
+
+  async getPurchasableVersion(
+    institutionId: string,
+    packageId: string,
+    executor: DatabaseExecutor,
+    now: Date = new Date(),
+  ): Promise<LessonPackageVersionSnapshot> {
+    const { record, version } = await this.currentVersion(institutionId, packageId, executor);
+    if (record.status !== 'active') {
+      throw new ApiError(409, 'LESSON_PACKAGE_INACTIVE', '课时包已停用，不能在线购买');
+    }
+    if (!record.onlineSaleEnabled) {
+      throw new ApiError(409, 'LESSON_PACKAGE_ONLINE_SALE_DISABLED', '课时包暂未开放线上购买');
+    }
+    if (record.priceAmount <= 0) {
+      throw new ApiError(
+        409,
+        'LESSON_PACKAGE_PRICE_INVALID',
+        '线上可售课时包必须设置大于 0 的价格',
+      );
+    }
+    if (record.saleStartsAt && now.getTime() < record.saleStartsAt.getTime()) {
+      throw new ApiError(409, 'LESSON_PACKAGE_SALE_NOT_STARTED', '课时包线上销售尚未开始');
+    }
+    if (record.saleEndsAt && now.getTime() >= record.saleEndsAt.getTime()) {
+      throw new ApiError(409, 'LESSON_PACKAGE_SALE_ENDED', '课时包线上销售已结束');
     }
     return version;
   }
@@ -72,6 +130,8 @@ export class LessonProductsService implements LessonPackageDirectory {
     try {
       return await this.database.transaction(async (transaction) => {
         await this.institutions.assertActiveInstitution(institutionId, transaction);
+        this.assertSaleWindow(input.saleStartsAt, input.saleEndsAt);
+        this.assertOnlineSalePrice(input.onlineSaleEnabled ?? false, input.priceAmount ?? 0);
         const { record } = await this.repository.create({ ...input, institutionId }, transaction);
         await this.audit.record(
           {
@@ -85,6 +145,8 @@ export class LessonProductsService implements LessonPackageDirectory {
               { field: 'name', before: null, after: record.name },
               { field: 'baseUnits', before: null, after: record.baseUnits },
               { field: 'bonusUnits', before: null, after: record.bonusUnits },
+              { field: 'priceAmount', before: null, after: record.priceAmount },
+              { field: 'onlineSaleEnabled', before: null, after: record.onlineSaleEnabled },
             ],
           },
           transaction,
@@ -111,6 +173,14 @@ export class LessonProductsService implements LessonPackageDirectory {
           transaction,
         );
         if (!before) throw new ApiError(404, 'LESSON_PACKAGE_NOT_FOUND', '课时包不存在');
+        this.assertSaleWindow(
+          input.saleStartsAt === undefined ? before.saleStartsAt : input.saleStartsAt,
+          input.saleEndsAt === undefined ? before.saleEndsAt : input.saleEndsAt,
+        );
+        this.assertOnlineSalePrice(
+          input.onlineSaleEnabled ?? before.onlineSaleEnabled,
+          input.priceAmount ?? before.priceAmount,
+        );
         const updated = await this.repository.update(institutionId, packageId, input, transaction);
         if (!updated) {
           throw new ApiError(409, 'LESSON_PACKAGE_VERSION_CONFLICT', '课时包已被其他操作更新');
@@ -126,7 +196,7 @@ export class LessonProductsService implements LessonPackageDirectory {
               .filter(([field]) => field !== 'expectedRevision')
               .map(([field, after]) => ({
                 field,
-                before: before[field as keyof LessonPackageRecord] ?? null,
+                before: this.auditValue(before[field as keyof LessonPackageRecord]),
                 after: after ?? null,
               })),
           },
@@ -143,9 +213,54 @@ export class LessonProductsService implements LessonPackageDirectory {
   private view(record: LessonPackageRecord): LessonPackage {
     return {
       ...record,
+      saleStartsAt: record.saleStartsAt?.toISOString() ?? null,
+      saleEndsAt: record.saleEndsAt?.toISOString() ?? null,
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
     };
+  }
+
+  private assertSaleWindow(
+    saleStartsAt: string | Date | null | undefined,
+    saleEndsAt: string | Date | null | undefined,
+  ): void {
+    assertValidLessonPackageOnlineSaleWindow({
+      saleStartsAt: this.toDate(saleStartsAt),
+      saleEndsAt: this.toDate(saleEndsAt),
+    });
+  }
+
+  private assertOnlineSalePrice(enabled: boolean, priceAmount: number): void {
+    if (enabled && priceAmount <= 0) {
+      throw new ApiError(
+        400,
+        'LESSON_PACKAGE_PRICE_INVALID',
+        '线上可售课时包必须设置大于 0 的价格',
+      );
+    }
+  }
+
+  private toDate(value: string | Date | null | undefined): Date | null {
+    if (!value) return null;
+    return value instanceof Date ? value : new Date(value);
+  }
+
+  private auditValue(value: unknown): unknown {
+    return value instanceof Date ? value.toISOString() : (value ?? null);
+  }
+
+  private async currentVersion(
+    institutionId: string,
+    packageId: string,
+    executor: DatabaseExecutor,
+  ): Promise<{ record: LessonPackageRecord; version: LessonPackageVersionSnapshot }> {
+    const record = await this.repository.findForInstitution(institutionId, packageId, executor);
+    if (!record) throw new ApiError(404, 'LESSON_PACKAGE_NOT_FOUND', '课时包不存在');
+    const version = await this.repository.findVersion(record.id, record.revision, executor);
+    if (!version) {
+      throw new ApiError(409, 'LESSON_PACKAGE_VERSION_MISSING', '课时包版本快照缺失');
+    }
+    return { record, version };
   }
 
   private translateConflict(error: unknown): void {

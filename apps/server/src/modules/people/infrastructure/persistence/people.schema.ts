@@ -150,7 +150,7 @@ export const peopleStudentGuardians = pgTable(
       .notNull()
       .default('unverified'),
     verificationSource: varchar('verification_source', { length: 24 })
-      .$type<'admin' | 'invitation' | 'legacy_import'>()
+      .$type<'admin' | 'invitation' | 'legacy_import' | 'wechat'>()
       .notNull()
       .default('legacy_import'),
     verifiedAt: timestamp('verified_at', { withTimezone: true }),
@@ -171,7 +171,7 @@ export const peopleStudentGuardians = pgTable(
     ),
     check(
       'people_student_guardians_verification_source_check',
-      sql`${table.verificationSource} in ('admin','invitation','legacy_import')`,
+      sql`${table.verificationSource} in ('admin','invitation','legacy_import','wechat')`,
     ),
     check(
       'people_student_guardians_verified_at_check',

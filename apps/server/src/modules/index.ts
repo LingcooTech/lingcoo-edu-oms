@@ -43,6 +43,7 @@ import {
   createPaymentsModule,
   createPaymentsService,
   PAYMENT_SETTINGS,
+  type PaymentFactReceiver,
   WECHAT_PAY_SETTINGS,
 } from './payments/public.js';
 import { createOrganizationModule, createOrganizationService } from './organization/public.js';
@@ -66,6 +67,8 @@ import {
 } from './teaching-resources/public.js';
 import {
   createWechatMiniProgramConnectionTester,
+  createWechatMiniAuthModule,
+  createWechatMiniAuthService,
   createWechatMiniProgramService,
   WECHAT_MINI_PROGRAM_SETTINGS,
 } from './wechat-mini-program/public.js';
@@ -76,6 +79,11 @@ import {
 } from './content-sources/public.js';
 import { createContentModule, createContentService } from './content/public.js';
 import { createAdmissionsModule, createAdmissionsService } from './admissions/public.js';
+import {
+  createLessonCommerceModule,
+  createLessonCommerceService,
+  type LessonCommerceService,
+} from './lesson-commerce/public.js';
 
 export interface ApplicationModuleDependencies {
   environment: AppEnvironment;
@@ -138,12 +146,34 @@ export async function registerApplicationModules(
     references: storage.references,
     audit,
   });
+  const lessonCommerceRef: { current: LessonCommerceService | null } = { current: null };
+  const paymentFacts: PaymentFactReceiver = {
+    receive(fact) {
+      if (!lessonCommerceRef.current) {
+        throw new Error('Lesson commerce payment facts are not ready');
+      }
+      return lessonCommerceRef.current.receive(fact);
+    },
+    assertRefundAllowed(request) {
+      if (!lessonCommerceRef.current) {
+        throw new Error('Lesson commerce refund policy is not ready');
+      }
+      return lessonCommerceRef.current.assertRefundAllowed(request);
+    },
+  };
   const payments = createPaymentsService({
     database: dependencies.database,
     settings: settings.service,
     audit,
+    facts: paymentFacts,
   });
   const wechatMiniProgram = createWechatMiniProgramService({ settings: settings.service });
+  const wechatMiniAuth = createWechatMiniAuthService({
+    settings: settings.service,
+    database: dependencies.database,
+    identity,
+    miniProgramService: wechatMiniProgram,
+  });
   const contentSources = createContentSourcesService({ settings: settings.service });
   const content = createContentService({ database: dependencies.database, contentSources, audit });
   jobs.registry.register(storage.maintenance.deleteObjectJobHandler);
@@ -194,6 +224,18 @@ export async function registerApplicationModules(
     audit,
     outbox: outbox.service,
   });
+  const lessonCommerce = createLessonCommerceService({
+    database: dependencies.database,
+    institutions: organization,
+    people,
+    products: lessonProducts,
+    lessons: lessonAccounts,
+    payments,
+    payers: wechatMiniAuth,
+    idempotency,
+    audit,
+  });
+  lessonCommerceRef.current = lessonCommerce;
   const lessonSessions = createLessonSessionsService({
     database: dependencies.database,
     institutions: organization,
@@ -221,6 +263,15 @@ export async function registerApplicationModules(
   installAccessControlGuard(app, { environment: dependencies.environment, identity, access });
   await app.register(createHealthModule(dependencies));
   await app.register(createIdentityModule({ ...dependencies, audit, service: identity }));
+  await app.register(
+    createWechatMiniAuthModule({
+      settings: settings.service,
+      database: dependencies.database,
+      identity,
+      miniProgramService: wechatMiniProgram,
+      authService: wechatMiniAuth,
+    }),
+  );
   await app.register(
     createAccessControlModule({
       database: dependencies.database,
@@ -282,6 +333,20 @@ export async function registerApplicationModules(
       audit,
       outbox: outbox.service,
       service: lessonAccounts,
+    }),
+  );
+  await app.register(
+    createLessonCommerceModule({
+      database: dependencies.database,
+      institutions: organization,
+      people,
+      products: lessonProducts,
+      lessons: lessonAccounts,
+      payments,
+      payers: wechatMiniAuth,
+      idempotency,
+      audit,
+      service: lessonCommerce,
     }),
   );
   await app.register(

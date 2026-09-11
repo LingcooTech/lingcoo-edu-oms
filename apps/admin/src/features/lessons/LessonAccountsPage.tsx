@@ -55,6 +55,7 @@ import {
 } from './hooks';
 
 const sourceLabels: Record<LessonBatchSourceType, string> = {
+  online_purchase: '线上购课',
   offline_purchase: '线下购课登记',
   gift: '赠送',
   makeup: '补发',

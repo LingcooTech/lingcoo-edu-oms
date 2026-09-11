@@ -85,7 +85,13 @@ export const lessonBatches = pgTable(
     templateName: varchar('template_name', { length: 160 }),
     sourceType: varchar('source_type', { length: 32 })
       .$type<
-        'offline_purchase' | 'gift' | 'makeup' | 'migration_opening' | 'custom' | 'adjustment'
+        | 'online_purchase'
+        | 'offline_purchase'
+        | 'gift'
+        | 'makeup'
+        | 'migration_opening'
+        | 'custom'
+        | 'adjustment'
       >()
       .notNull(),
     sourceReference: varchar('source_reference', { length: 200 }),
@@ -135,6 +141,10 @@ export const lessonBatches = pgTable(
     check(
       'lesson_batches_status_check',
       sql`${table.status} in ('available', 'depleted', 'reversed')`,
+    ),
+    check(
+      'lesson_batches_source_type_check',
+      sql`${table.sourceType} in ('online_purchase','offline_purchase','gift','makeup','migration_opening','custom','adjustment')`,
     ),
     check(
       'lesson_batches_status_balance_check',

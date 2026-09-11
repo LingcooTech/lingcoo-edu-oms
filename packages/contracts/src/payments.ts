@@ -4,7 +4,7 @@ import { idSchema } from './common/ids.js';
 import { pageQuerySchema, pagedResponseSchema } from './common/pagination.js';
 import { isoDateTimeSchema } from './common/time.js';
 
-export const paymentProviderSchema = z.enum(['mock']);
+export const paymentProviderSchema = z.enum(['mock', 'wechat_pay']);
 export const paymentIntentStatusSchema = z.enum([
   'created',
   'pending',
@@ -35,6 +35,7 @@ const currencySchema = z
   .trim()
   .regex(/^[A-Z]{3}$/);
 const merchantReferenceSchema = z.string().trim().min(1).max(200);
+export const paymentClientPayloadSchema = z.record(z.string(), z.string());
 
 export const createPaymentIntentRequestSchema = z.object({
   merchantReference: merchantReferenceSchema,
@@ -74,6 +75,7 @@ export const paymentTransactionSchema = z.object({
   amountMinor: amountMinorSchema,
   currency: currencySchema,
   status: paymentTransactionStatusSchema,
+  clientPayload: paymentClientPayloadSchema.nullable(),
   lastQueriedAt: isoDateTimeSchema.nullable(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
@@ -163,6 +165,7 @@ export type PaymentIntentDetail = z.infer<typeof paymentIntentDetailSchema>;
 export type PaymentTransaction = z.infer<typeof paymentTransactionSchema>;
 export type PaymentRefund = z.infer<typeof paymentRefundSchema>;
 export type PaymentCallback = z.infer<typeof paymentCallbackSchema>;
+export type PaymentClientPayload = z.infer<typeof paymentClientPayloadSchema>;
 export type PaymentIntentQuery = z.output<typeof paymentIntentQuerySchema>;
 export type PaymentTransactionQuery = z.output<typeof paymentTransactionQuerySchema>;
 export type PaymentRefundQuery = z.output<typeof paymentRefundQuerySchema>;

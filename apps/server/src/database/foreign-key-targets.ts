@@ -52,6 +52,10 @@ export const lessonMovementsForeignKeyTarget = pgTable('lesson_movements', {
   id: uuid('id').primaryKey(),
 });
 
+export const paymentIntentsForeignKeyTarget = pgTable('payment_intents', {
+  id: uuid('id').primaryKey(),
+});
+
 export const guardiansForeignKeyTarget = pgTable('people_guardians', {
   id: uuid('id').primaryKey(),
 });

@@ -204,11 +204,11 @@ export const foundationNavigation: AdminNavigationItem[] = [
     section: 'ledger',
   },
   {
-    key: 'orders-planned',
-    label: '订单与收款（后续）',
+    key: 'orders',
+    label: '订单与收款',
     path: '/orders',
     icon: <AccountBookOutlined />,
-    disabled: true,
+    permission: 'education.orders.read',
     section: 'ledger',
   },
   {

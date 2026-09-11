@@ -1,10 +1,12 @@
 import { sql } from 'drizzle-orm';
+import type { PaymentClientPayload } from '@lingcoo-edu-oms/contracts';
 import {
   bigint,
   char,
   check,
   index,
   integer,
+  jsonb,
   pgTable,
   timestamp,
   uniqueIndex,
@@ -45,7 +47,7 @@ export const paymentIntents = pgTable(
       sql`${table.refundedAmountMinor} >= 0 and ${table.refundedAmountMinor} <= ${table.amountMinor}`,
     ),
     check('payment_intents_revision_check', sql`${table.revision} > 0`),
-    check('payment_intents_provider_check', sql`${table.provider} in ('mock')`),
+    check('payment_intents_provider_check', sql`${table.provider} in ('mock','wechat_pay')`),
     check(
       'payment_intents_status_check',
       sql`${table.status} in ('created','pending','succeeded','failed','closed','partially_refunded','refunded','unknown')`,
@@ -66,6 +68,8 @@ export const paymentProviderTransactions = pgTable(
     amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
     currency: char('currency', { length: 3 }).notNull(),
     status: varchar('status', { length: 20 }).notNull(),
+    clientPayload: jsonb('client_payload').$type<PaymentClientPayload | null>(),
+    providerMetadata: jsonb('provider_metadata').$type<Record<string, unknown> | null>(),
     lastQueriedAt: timestamp('last_queried_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -78,7 +82,10 @@ export const paymentProviderTransactions = pgTable(
     index('payment_provider_transactions_intent_idx').on(table.intentId, table.createdAt),
     index('payment_provider_transactions_status_idx').on(table.status, table.updatedAt),
     check('payment_provider_transactions_amount_check', sql`${table.amountMinor} > 0`),
-    check('payment_provider_transactions_provider_check', sql`${table.provider} in ('mock')`),
+    check(
+      'payment_provider_transactions_provider_check',
+      sql`${table.provider} in ('mock','wechat_pay')`,
+    ),
     check(
       'payment_provider_transactions_status_check',
       sql`${table.status} in ('pending','succeeded','failed','closed','unknown')`,
@@ -107,7 +114,7 @@ export const paymentCallbacks = pgTable(
     uniqueIndex('payment_callbacks_provider_event_uidx').on(table.provider, table.providerEventId),
     index('payment_callbacks_intent_received_idx').on(table.intentId, table.receivedAt),
     check('payment_callbacks_amount_check', sql`${table.amountMinor} > 0`),
-    check('payment_callbacks_provider_check', sql`${table.provider} in ('mock')`),
+    check('payment_callbacks_provider_check', sql`${table.provider} in ('mock','wechat_pay')`),
     check(
       'payment_callbacks_event_check',
       sql`${table.eventType} in ('payment.succeeded','payment.failed','payment.closed')`,

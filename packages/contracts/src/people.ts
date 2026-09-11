@@ -16,7 +16,12 @@ export const studentInstitutionSourceSchema = z.enum([
 ]);
 export const guardianBindingStatusSchema = z.enum(['active', 'revoked']);
 export const guardianVerificationStatusSchema = z.enum(['verified', 'unverified']);
-export const guardianVerificationSourceSchema = z.enum(['admin', 'invitation', 'legacy_import']);
+export const guardianVerificationSourceSchema = z.enum([
+  'admin',
+  'invitation',
+  'legacy_import',
+  'wechat',
+]);
 
 const optionalName = z.string().trim().min(1).max(120).nullable();
 const optionalGrade = z.string().trim().min(1).max(80).nullable();

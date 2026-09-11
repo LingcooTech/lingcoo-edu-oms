@@ -11,12 +11,16 @@ import {
 const templateId = '11111111-1111-4111-8111-111111111111';
 
 describe('P3 lesson operation contracts', () => {
-  it('keeps lesson packages institution-generic and integer based', () => {
+  it('keeps lesson packages institution-generic, integer based and ready for online sales', () => {
     const parsed = createLessonPackageRequestSchema.parse({
       name: '通用课时 20 节',
       description: null,
       baseUnits: 20,
       bonusUnits: 2,
+      priceAmount: 12_800,
+      onlineSaleEnabled: true,
+      saleStartsAt: '2026-10-01T00:00:00.000Z',
+      saleEndsAt: '2026-10-31T23:59:59.000Z',
       courseId: templateId,
       amount: 2_000,
     });
@@ -25,9 +29,22 @@ describe('P3 lesson operation contracts', () => {
       description: null,
       baseUnits: 20,
       bonusUnits: 2,
+      priceAmount: 12_800,
+      currency: 'CNY',
+      onlineSaleEnabled: true,
+      saleStartsAt: '2026-10-01T00:00:00.000Z',
+      saleEndsAt: '2026-10-31T23:59:59.000Z',
     });
     expect(
       createLessonPackageRequestSchema.safeParse({ name: '半节', baseUnits: 0.5 }).success,
+    ).toBe(false);
+    expect(
+      createLessonPackageRequestSchema.safeParse({
+        name: '窗口错误',
+        baseUnits: 10,
+        saleStartsAt: '2026-10-02T00:00:00.000Z',
+        saleEndsAt: '2026-10-01T00:00:00.000Z',
+      }).success,
     ).toBe(false);
   });
 

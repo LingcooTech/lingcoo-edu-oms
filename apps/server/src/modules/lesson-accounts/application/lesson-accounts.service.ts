@@ -67,6 +67,21 @@ export interface LessonConsumptionReversalCommand {
   metadata?: Record<string, unknown>;
 }
 
+export interface LessonPurchaseGrantCommand {
+  institutionId: string;
+  studentId: string;
+  packageId: string;
+  packageVersion: number;
+  orderNo: string;
+}
+
+export interface LessonPurchaseGrantLedger {
+  grantPurchase(
+    input: LessonPurchaseGrantCommand,
+    context: LessonMutationContext,
+  ): Promise<LessonAccountMutationResult>;
+}
+
 export interface LessonConsumptionLedger {
   consumeInTransaction(
     input: LessonConsumptionCommand,
@@ -80,7 +95,7 @@ export interface LessonConsumptionLedger {
   ): Promise<LessonAccountMutationResult>;
 }
 
-export class LessonAccountsService implements LessonConsumptionLedger {
+export class LessonAccountsService implements LessonConsumptionLedger, LessonPurchaseGrantLedger {
   constructor(
     private readonly database: DatabaseHandle,
     private readonly repository: LessonAccountsRepository,
@@ -319,6 +334,50 @@ export class LessonAccountsService implements LessonConsumptionLedger {
     ) {
       throw new ApiError(409, 'LESSON_ACCOUNT_RECONCILIATION_FAILED', '课时账户与流水不一致');
     }
+  }
+
+  async grantPurchase(
+    input: LessonPurchaseGrantCommand,
+    context: LessonMutationContext,
+  ): Promise<LessonAccountMutationResult> {
+    const result = await this.idempotency.execute(
+      { operation: 'lesson-account.online-purchase', resultSchema: grantLessonUnitsResultSchema },
+      {
+        scope: `lesson-account:${input.institutionId}:${input.studentId}`,
+        key: `lesson-order:${input.orderNo}`,
+        request: input,
+        actorId: context.actorId,
+      },
+      async (transaction) => {
+        await this.assertParties(input.institutionId, input.studentId, transaction);
+        const packageVersion = await this.packages.getVersion(
+          input.institutionId,
+          input.packageId,
+          input.packageVersion,
+          transaction,
+        );
+        const { record: account } = await this.repository.lockOrCreateAccount(
+          input.institutionId,
+          input.studentId,
+          transaction,
+        );
+        return this.credit(
+          account,
+          {
+            movementType: 'grant',
+            sourceType: 'online_purchase',
+            sourceReference: input.orderNo,
+            reason: `线上购课订单 ${input.orderNo}`,
+            baseUnits: packageVersion.baseUnits,
+            bonusUnits: packageVersion.bonusUnits,
+            packageVersion,
+          },
+          context,
+          transaction,
+        );
+      },
+    );
+    return result.value as LessonAccountMutationResult;
   }
 
   async consumeInTransaction(

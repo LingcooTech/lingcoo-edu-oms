@@ -7,6 +7,11 @@ export interface LessonPackageVersionSnapshot {
   description: string | null;
   baseUnits: number;
   bonusUnits: number;
+  priceAmount: number;
+  currency: 'CNY';
+  onlineSaleEnabled: boolean;
+  saleStartsAt: Date | null;
+  saleEndsAt: Date | null;
   status: 'active' | 'inactive';
   createdAt: Date;
 }

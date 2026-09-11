@@ -1,4 +1,4 @@
-import { and, asc, count, eq, ilike, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, gt, ilike, isNull, lte, or, type SQL } from 'drizzle-orm';
 import type {
   CreateLessonPackageRequest,
   LessonPackageListQuery,
@@ -42,6 +42,26 @@ export class LessonProductsRepository {
       this.database.db.select({ value: count() }).from(lessonPackageTemplates).where(where),
     ]);
     return { items, total: totals[0]?.value ?? 0 };
+  }
+
+  async listPurchasable(institutionId: string, now: Date) {
+    return this.database.db
+      .select()
+      .from(lessonPackageTemplates)
+      .where(
+        and(
+          eq(lessonPackageTemplates.institutionId, institutionId),
+          eq(lessonPackageTemplates.status, 'active'),
+          eq(lessonPackageTemplates.onlineSaleEnabled, true),
+          gt(lessonPackageTemplates.priceAmount, 0),
+          or(
+            isNull(lessonPackageTemplates.saleStartsAt),
+            lte(lessonPackageTemplates.saleStartsAt, now),
+          ),
+          or(isNull(lessonPackageTemplates.saleEndsAt), gt(lessonPackageTemplates.saleEndsAt, now)),
+        ),
+      )
+      .orderBy(asc(lessonPackageTemplates.name), asc(lessonPackageTemplates.id));
   }
 
   async find(id: string, executor: DatabaseExecutor = this.database.db) {
@@ -93,7 +113,14 @@ export class LessonProductsRepository {
     input: CreateLessonPackageRequest & { institutionId: string },
     executor: DatabaseTransaction,
   ) {
-    const [record] = await executor.insert(lessonPackageTemplates).values(input).returning();
+    const [record] = await executor
+      .insert(lessonPackageTemplates)
+      .values({
+        ...input,
+        saleStartsAt: this.toDate(input.saleStartsAt),
+        saleEndsAt: this.toDate(input.saleEndsAt),
+      })
+      .returning();
     const version = await this.createVersion(record!, executor);
     return { record: record!, version };
   }
@@ -104,10 +131,16 @@ export class LessonProductsRepository {
     input: UpdateLessonPackageRequest,
     executor: DatabaseTransaction,
   ) {
-    const { expectedRevision, ...changes } = input;
+    const { expectedRevision, saleStartsAt, saleEndsAt, ...changes } = input;
     const [record] = await executor
       .update(lessonPackageTemplates)
-      .set({ ...changes, revision: expectedRevision + 1, updatedAt: new Date() })
+      .set({
+        ...changes,
+        ...(saleStartsAt === undefined ? {} : { saleStartsAt: this.toDate(saleStartsAt) }),
+        ...(saleEndsAt === undefined ? {} : { saleEndsAt: this.toDate(saleEndsAt) }),
+        revision: expectedRevision + 1,
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(lessonPackageTemplates.id, id),
@@ -132,9 +165,18 @@ export class LessonProductsRepository {
         description: record.description,
         baseUnits: record.baseUnits,
         bonusUnits: record.bonusUnits,
+        priceAmount: record.priceAmount,
+        currency: record.currency,
+        onlineSaleEnabled: record.onlineSaleEnabled,
+        saleStartsAt: record.saleStartsAt,
+        saleEndsAt: record.saleEndsAt,
         status: record.status,
       })
       .returning();
     return version!;
+  }
+
+  private toDate(value: string | null | undefined): Date | null {
+    return value ? new Date(value) : null;
   }
 }

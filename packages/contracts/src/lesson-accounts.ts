@@ -7,6 +7,7 @@ import { idempotencyKeySchema } from './idempotency.js';
 import { lessonUnitsSchema, nonnegativeLessonUnitsSchema } from './lesson-packages.js';
 
 export const lessonGrantSourceSchema = z.enum([
+  'online_purchase',
   'offline_purchase',
   'gift',
   'makeup',
@@ -14,6 +15,7 @@ export const lessonGrantSourceSchema = z.enum([
   'custom',
 ]);
 export const lessonBatchSourceTypeSchema = z.enum([
+  'online_purchase',
   'offline_purchase',
   'gift',
   'makeup',

@@ -1,5 +1,6 @@
 // This file is the Drizzle composition point. Tables remain owned by their module.
 export * from '../modules/identity/infrastructure/persistence/identity.schema.js';
+export * from '../modules/wechat-mini-program/infrastructure/persistence/wechat-mini-auth.schema.js';
 export * from '../modules/access-control/infrastructure/persistence/access-control.schema.js';
 export * from '../modules/audit/infrastructure/persistence/audit.schema.js';
 export * from '../modules/settings/infrastructure/persistence/settings.schema.js';
@@ -15,6 +16,7 @@ export * from '../modules/organization/infrastructure/persistence/organization.s
 export * from '../modules/people/infrastructure/persistence/people.schema.js';
 export * from '../modules/lesson-products/infrastructure/persistence/lesson-products.schema.js';
 export * from '../modules/lesson-accounts/infrastructure/persistence/lesson-accounts.schema.js';
+export * from '../modules/lesson-commerce/infrastructure/persistence/lesson-commerce.schema.js';
 export * from '../modules/lesson-sessions/infrastructure/persistence/lesson-sessions.schema.js';
 export * from '../modules/teaching-resources/infrastructure/persistence/teaching-resources.schema.js';
 export * from '../modules/content/infrastructure/persistence/content.schema.js';

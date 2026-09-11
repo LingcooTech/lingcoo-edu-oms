@@ -4,6 +4,8 @@ export type {
   LessonConsumptionCommand,
   LessonConsumptionLedger,
   LessonConsumptionReversalCommand,
+  LessonPurchaseGrantCommand,
+  LessonPurchaseGrantLedger,
   LessonMutationContext,
 } from './application/lesson-accounts.service.js';
 export {

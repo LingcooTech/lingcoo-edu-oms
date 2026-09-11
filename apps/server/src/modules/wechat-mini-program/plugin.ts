@@ -1,5 +1,15 @@
+import type { FastifyPluginAsync } from 'fastify';
+
+import type { DatabaseHandle } from '../../database/database.js';
+import type { IdentityService } from '../identity/public.js';
 import type { SettingsReader } from '../settings/public.js';
+import { registerWechatMiniAuthRoutes } from './api/routes.js';
+import {
+  createWechatMiniAuthRepositoryStore,
+  WechatMiniAuthService,
+} from './application/wechat-mini-auth.service.js';
 import { WechatMiniProgramService } from './application/wechat-mini-program.service.js';
+import { WechatMiniAuthRepository } from './infrastructure/persistence/wechat-mini-auth.repository.js';
 import { WechatMiniProgramClient } from './infrastructure/wechat-mini-program.client.js';
 
 export interface WechatMiniProgramModuleDependencies {
@@ -15,6 +25,36 @@ export function createWechatMiniProgramService(dependencies: WechatMiniProgramMo
       new WechatMiniProgramClient(dependencies.settings),
     )
   );
+}
+
+export interface WechatMiniAuthModuleDependencies {
+  settings: SettingsReader;
+  database: DatabaseHandle;
+  identity: IdentityService;
+  miniProgramService?: WechatMiniProgramService;
+  authService?: WechatMiniAuthService;
+}
+
+export function createWechatMiniAuthService(
+  dependencies: WechatMiniAuthModuleDependencies,
+): WechatMiniAuthService {
+  if (dependencies.authService) return dependencies.authService;
+  const miniProgramService =
+    dependencies.miniProgramService ??
+    createWechatMiniProgramService({ settings: dependencies.settings });
+  return new WechatMiniAuthService(
+    dependencies.settings,
+    miniProgramService,
+    createWechatMiniAuthRepositoryStore(new WechatMiniAuthRepository(dependencies.database)),
+    dependencies.identity,
+  );
+}
+
+export function createWechatMiniAuthModule(
+  dependencies: WechatMiniAuthModuleDependencies,
+): FastifyPluginAsync {
+  return async (app) =>
+    registerWechatMiniAuthRoutes(app, createWechatMiniAuthService(dependencies));
 }
 
 export function createWechatMiniProgramConnectionTester(service: WechatMiniProgramService) {

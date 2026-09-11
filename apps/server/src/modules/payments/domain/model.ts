@@ -1,6 +1,7 @@
 import type {
   MockPaymentCallbackRequest,
   PaymentCallbackEvent,
+  PaymentClientPayload,
   PaymentProvider,
   PaymentTransactionStatus,
 } from '@lingcoo-edu-oms/contracts';
@@ -17,11 +18,16 @@ export interface PaymentProviderCreateInput {
   amountMinor: number;
   currency: string;
   description: string;
+  providerContext?: {
+    payerOpenId?: string;
+  };
 }
 
 export interface PaymentProviderTransactionResult {
   providerTransactionId: string;
   status: PaymentTransactionStatus;
+  clientPayload?: PaymentClientPayload;
+  providerMetadata?: Record<string, unknown>;
 }
 
 export interface PaymentProviderRefundResult {
@@ -32,7 +38,10 @@ export interface PaymentProviderRefundResult {
 export interface VerifiedPaymentCallback extends MockPaymentCallbackRequest {
   provider: PaymentProvider;
   payloadHash: string;
+  providerMetadata?: Record<string, unknown>;
 }
+
+export type PaymentCallbackHeaders = Readonly<Record<string, string | undefined>>;
 
 export interface PaymentProviderAdapter {
   readonly key: PaymentProvider;
@@ -44,12 +53,15 @@ export interface PaymentProviderAdapter {
     providerTransactionId: string;
     refundId: string;
     amountMinor: number;
+    totalAmountMinor: number;
+    currency: string;
     reason: string;
   }): Promise<PaymentProviderRefundResult>;
   verifyCallback(
-    input: MockPaymentCallbackRequest,
+    input: unknown,
     signature: string | undefined,
     rawBody: Buffer,
+    headers?: PaymentCallbackHeaders,
   ): Promise<VerifiedPaymentCallback>;
 }
 
@@ -65,6 +77,12 @@ export interface PaymentFact {
 
 export interface PaymentFactReceiver {
   receive(fact: PaymentFact): Promise<void>;
+  assertRefundAllowed?(request: {
+    intentId: string;
+    merchantReference: string;
+    amountMinor: number;
+    reason: string;
+  }): Promise<void>;
 }
 
 export const NOOP_PAYMENT_FACT_RECEIVER: PaymentFactReceiver = { async receive() {} };

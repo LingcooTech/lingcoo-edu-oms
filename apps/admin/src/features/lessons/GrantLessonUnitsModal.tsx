@@ -6,12 +6,15 @@ export type GrantLessonUnitsFormValues = {
   templateId?: string;
   baseUnits?: number;
   bonusUnits?: number;
-  source: Exclude<LessonBatchSourceType, 'adjustment'>;
+  source: Exclude<LessonBatchSourceType, 'adjustment' | 'online_purchase'>;
   sourceReference?: string;
   reason: string;
 };
 
-const grantSourceLabels: Record<Exclude<LessonBatchSourceType, 'adjustment'>, string> = {
+const grantSourceLabels: Record<
+  Exclude<LessonBatchSourceType, 'adjustment' | 'online_purchase'>,
+  string
+> = {
   offline_purchase: '线下购课登记',
   gift: '赠送',
   makeup: '补发',

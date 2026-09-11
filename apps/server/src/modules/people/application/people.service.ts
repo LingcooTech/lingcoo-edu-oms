@@ -94,8 +94,42 @@ export interface StudentOnboardingDirectory {
   ): Promise<{ student: InstitutionStudent; guardian: GuardianBinding }>;
 }
 
+export interface GuardianSelfDirectory {
+  guardianForIdentity(
+    identityUserId: string,
+    executor?: DatabaseExecutor,
+  ): Promise<{ id: string; fullName: string }>;
+  listStudentsForGuardian(
+    identityUserId: string,
+    institutionId: string,
+    input: StudentListQuery,
+  ): ReturnType<PeopleService['listStudents']>;
+  assertGuardianStudent(
+    identityUserId: string,
+    institutionId: string,
+    studentId: string,
+    executor?: DatabaseExecutor,
+  ): Promise<{
+    guardianId: string;
+    guardianName: string;
+    student: { id: string; fullName: string };
+  }>;
+  onboardStudentForGuardian(
+    identityUserId: string,
+    institutionId: string,
+    student: CreateStudentRequest,
+    guardian: { fullName: string; relationship: string },
+    context: AuditContext,
+  ): Promise<{ student: InstitutionStudent; guardian: GuardianBinding }>;
+}
+
 export class PeopleService
-  implements EducationDirectory, StudentDirectory, TeacherDirectory, StudentOnboardingDirectory
+  implements
+    EducationDirectory,
+    StudentDirectory,
+    TeacherDirectory,
+    StudentOnboardingDirectory,
+    GuardianSelfDirectory
 {
   constructor(
     private readonly database: DatabaseHandle,
@@ -114,6 +148,177 @@ export class PeopleService
       pageSize: input.pageSize,
       total: result.total,
     };
+  }
+
+  async guardianForIdentity(
+    identityUserId: string,
+    executor: DatabaseExecutor = this.database.db,
+  ): Promise<{ id: string; fullName: string }> {
+    const guardian = await this.repository.findGuardianByIdentityUserId(identityUserId, executor);
+    if (!guardian || guardian.status !== 'active') {
+      throw new ApiError(404, 'GUARDIAN_PROFILE_NOT_FOUND', '家长档案尚未创建');
+    }
+    return { id: guardian.id, fullName: guardian.fullName };
+  }
+
+  async listStudentsForGuardian(
+    identityUserId: string,
+    institutionId: string,
+    input: StudentListQuery,
+  ) {
+    const guardian = await this.repository.findGuardianByIdentityUserId(identityUserId);
+    if (!guardian || guardian.status !== 'active') {
+      return { items: [], page: input.page, pageSize: input.pageSize, total: 0 };
+    }
+    return this.listStudents(input, {
+      kind: 'guardian',
+      institutionId,
+      guardianId: guardian.id,
+    });
+  }
+
+  async assertGuardianStudent(
+    identityUserId: string,
+    institutionId: string,
+    studentId: string,
+    executor: DatabaseExecutor = this.database.db,
+  ) {
+    const guardian = await this.repository.findGuardianByIdentityUserId(identityUserId, executor);
+    if (!guardian || guardian.status !== 'active') {
+      throw new ApiError(404, 'GUARDIAN_PROFILE_NOT_FOUND', '家长档案尚未创建');
+    }
+    const student = await this.assertStudentVisible(
+      studentId,
+      { kind: 'guardian', institutionId, guardianId: guardian.id },
+      executor,
+    );
+    return {
+      guardianId: guardian.id,
+      guardianName: guardian.fullName,
+      student: { id: student.id, fullName: student.fullName },
+    };
+  }
+
+  async onboardStudentForGuardian(
+    identityUserId: string,
+    institutionId: string,
+    studentInput: CreateStudentRequest,
+    guardianInput: { fullName: string; relationship: string },
+    context: AuditContext,
+  ): Promise<{ student: InstitutionStudent; guardian: GuardianBinding }> {
+    return this.database.transaction(async (transaction) => {
+      await this.institutions.assertActiveInstitution(institutionId, transaction);
+      const identityUser = await this.identity.getUser(identityUserId, transaction);
+      if (identityUser.status !== 'active') {
+        throw new ApiError(403, 'IDENTITY_INACTIVE', '当前登录账号已停用');
+      }
+      let existingGuardian = await this.repository.findGuardianByIdentityUserId(
+        identityUserId,
+        transaction,
+      );
+      if (!existingGuardian && identityUser.phone) {
+        const phoneMatches = (
+          await this.repository.findGuardiansByPhone(identityUser.phone, transaction)
+        ).filter((guardian) => guardian.status === 'active');
+        if (phoneMatches.length > 1) {
+          throw new ApiError(
+            409,
+            'GUARDIAN_PHONE_AMBIGUOUS',
+            '该手机号对应多份家长档案，请联系管理员核对后再继续',
+          );
+        }
+        if (phoneMatches[0]) {
+          if (phoneMatches[0].identityUserId && phoneMatches[0].identityUserId !== identityUserId) {
+            throw new ApiError(409, 'GUARDIAN_PHONE_ALREADY_BOUND', '该家长档案已绑定其他账号');
+          }
+          existingGuardian =
+            phoneMatches[0].identityUserId === identityUserId
+              ? phoneMatches[0]
+              : await this.repository.linkGuardianIdentity(
+                  phoneMatches[0].id,
+                  identityUserId,
+                  transaction,
+                );
+          if (!existingGuardian) {
+            throw new ApiError(409, 'GUARDIAN_IDENTITY_BIND_CONFLICT', '家长账号绑定发生并发冲突');
+          }
+          await this.audit.record(
+            {
+              ...context,
+              category: 'security',
+              action: 'guardian.identity-linked-by-phone',
+              resourceType: 'people.guardian',
+              resourceId: existingGuardian.id,
+              changes: [{ field: 'identityUserId', before: null, after: identityUserId }],
+            },
+            transaction,
+          );
+        }
+      }
+      const created = await this.repository.createStudent(institutionId, studentInput, transaction);
+      await this.lessonAccounts.ensureForStudentInstitution(
+        institutionId,
+        created.student.id,
+        context,
+        transaction,
+      );
+      const linked = existingGuardian
+        ? {
+            guardian: existingGuardian,
+            binding: await this.repository.bindExistingGuardian(
+              created.student.id,
+              {
+                guardianId: existingGuardian.id,
+                relationship: guardianInput.relationship,
+                isPrimary: true,
+              },
+              transaction,
+              'wechat',
+            ),
+          }
+        : await this.repository.createGuardianAndBinding(
+            created.student.id,
+            {
+              fullName: guardianInput.fullName,
+              phone: identityUser.phone,
+              email: identityUser.email,
+              identityUserId,
+              notes: null,
+              relationship: guardianInput.relationship,
+              isPrimary: true,
+            },
+            transaction,
+            'wechat',
+          );
+      await this.audit.record(
+        {
+          ...context,
+          category: 'business',
+          action: 'student.self-onboarded',
+          resourceType: 'people.student',
+          resourceId: created.student.id,
+          changes: [
+            { field: 'institutionId', before: null, after: institutionId },
+            { field: 'guardianId', before: null, after: linked.guardian.id },
+          ],
+          metadata: { channel: 'wechat_mini_program' },
+        },
+        transaction,
+      );
+      return {
+        student: this.studentView({
+          ...created.student,
+          institutionId: created.relationship.institutionId,
+          relationshipStatus: created.relationship.status,
+          relationshipRevision: created.relationship.revision,
+          relationshipSource: created.relationship.source,
+          relationshipSourceReference: created.relationship.sourceReference,
+          joinedAt: created.relationship.joinedAt,
+          endedAt: created.relationship.endedAt,
+        }),
+        guardian: this.guardianBindingView(linked.binding, linked.guardian),
+      };
+    });
   }
 
   async getStudent(studentId: string, scope: EducationDataScope): Promise<InstitutionStudent> {

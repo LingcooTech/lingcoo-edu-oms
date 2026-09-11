@@ -77,6 +77,35 @@ export const identityLegacyLinks = pgTable(
   ],
 );
 
+// Provider identities authenticate only through the provider-specific flow. They intentionally
+// carry neither credentials nor provider tokens.
+export const identityExternalIdentities = pgTable(
+  'identity_external_identities',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => identityUsers.id, { onDelete: 'cascade' }),
+    provider: varchar('provider', { length: 40 }).$type<'wechat_mini_program'>().notNull(),
+    appId: varchar('app_id', { length: 64 }).notNull(),
+    subject: varchar('subject', { length: 256 }).notNull(),
+    unionId: varchar('union_id', { length: 256 }),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('identity_external_identities_provider_subject_unique').on(
+      table.provider,
+      table.appId,
+      table.subject,
+    ),
+    index('identity_external_identities_user_idx').on(table.userId),
+    check(
+      'identity_external_identities_provider_check',
+      sql`${table.provider} in ('wechat_mini_program')`,
+    ),
+  ],
+);
+
 export const identityPasswordCredentials = pgTable('identity_password_credentials', {
   userId: uuid('user_id')
     .primaryKey()

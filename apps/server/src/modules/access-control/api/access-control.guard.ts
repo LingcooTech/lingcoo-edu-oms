@@ -65,6 +65,8 @@ export function installAccessControlGuard(
     ) {
       throw new ApiError(403, 'PASSWORD_CHANGE_REQUIRED', '请先修改密码');
     }
+    if ('authenticated' in policy) return;
+
     const permissions = await dependencies.access.permissionsForUser(principal.user.id);
     request.accessPermissions = permissions;
     const granted = new Set(permissions);

@@ -71,6 +71,11 @@ describe('P3 lesson API clients', () => {
       description: null,
       baseUnits: 10,
       bonusUnits: 0,
+      priceAmount: 9_900,
+      currency: 'CNY',
+      onlineSaleEnabled: true,
+      saleStartsAt: null,
+      saleEndsAt: null,
       status: 'active',
       revision: 1,
       createdAt: now,
@@ -81,7 +86,12 @@ describe('P3 lesson API clients', () => {
       .mockResolvedValue(new Response(JSON.stringify(response), { status: 201 }));
     const api = createLessonPackagesApi(createApiClient({ fetch }));
 
-    await api.create(institutionId, { name: response.name, baseUnits: 10 });
+    await api.create(institutionId, {
+      name: response.name,
+      baseUnits: 10,
+      priceAmount: 9_900,
+      onlineSaleEnabled: true,
+    });
 
     expect(fetch.mock.calls[0]?.[0]).toBe(`/api/institutions/${institutionId}/lesson-packages`);
     expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
@@ -89,6 +99,11 @@ describe('P3 lesson API clients', () => {
       description: null,
       baseUnits: 10,
       bonusUnits: 0,
+      priceAmount: 9_900,
+      currency: 'CNY',
+      onlineSaleEnabled: true,
+      saleStartsAt: null,
+      saleEndsAt: null,
     });
   });
 

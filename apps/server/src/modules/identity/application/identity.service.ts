@@ -10,13 +10,16 @@ import type {
 import {
   createAccessUserRequestSchema,
   loginRequestSchema,
+  mainlandChinaPhoneSchema,
   passwordSchema,
 } from '@lingcoo-edu-oms/contracts';
+import { z } from 'zod';
 
 import type { AppEnvironment } from '../../../config/environment.js';
 import type { DatabaseExecutor } from '../../../database/database.js';
 import { NOOP_AUDIT_WRITER, type AuditContext, type AuditWriter } from '../../audit/public.js';
 import type {
+  ExternalIdentityReference,
   IdentityUserPage,
   PublicIdentitySession,
   PublicIdentityUser,
@@ -142,6 +145,87 @@ export class IdentityService {
     if (!session || !this.digestMatches(csrfToken, session.csrfDigest)) return null;
     await this.repository.touchSession(session.sessionId);
     return session;
+  }
+
+  async findExternalIdentityUser(
+    reference: ExternalIdentityReference,
+  ): Promise<PublicIdentityUser | null> {
+    return this.repository.findUserByExternalIdentity(this.parseExternalIdentity(reference));
+  }
+
+  findExternalIdentitySubjectForUser(
+    userId: string,
+    reference: Pick<ExternalIdentityReference, 'provider' | 'appId'>,
+  ): Promise<string | null> {
+    const parsedReference = z
+      .object({
+        provider: z.literal('wechat_mini_program'),
+        appId: z.string().trim().min(1).max(64),
+      })
+      .parse(reference);
+    return this.repository.findExternalIdentitySubjectForUser(userId, parsedReference);
+  }
+
+  async bindExternalIdentityToPhone(
+    input: ExternalIdentityReference & { phone: string },
+  ): Promise<PublicIdentityUser> {
+    const reference = this.parseExternalIdentity(input);
+    const phone = mainlandChinaPhoneSchema.parse(input.phone);
+    return this.repository.transaction(async (transaction) => {
+      const user = await this.repository.bindExternalIdentityToPhone(
+        { ...reference, phone },
+        transaction,
+      );
+      if (user.phone !== phone) {
+        throw new ApiError(409, 'EXTERNAL_IDENTITY_PHONE_MISMATCH', '微信身份已绑定其他手机号');
+      }
+      return user;
+    });
+  }
+
+  async createSessionForUser(
+    userId: string,
+    context: Partial<AuditContext>,
+  ): Promise<IdentityLoginResult> {
+    const sessionToken = token();
+    const csrfToken = token();
+    const expiresAt = new Date(Date.now() + this.environment.AUTH_SESSION_TTL_SECONDS * 1000);
+    const result = await this.repository.transaction(async (transaction) => {
+      await this.repository.lockUser(userId, transaction);
+      const user = await this.repository.findUserById(userId, transaction);
+      if (!user || user.status !== 'active') {
+        throw new ApiError(401, 'INVALID_SESSION', '登录状态已失效');
+      }
+      const session = await this.repository.createSession(
+        {
+          userId: user.id,
+          tokenDigest: digest(sessionToken),
+          csrfDigest: digest(csrfToken),
+          expiresAt,
+          userAgent: context.userAgent ?? null,
+          ipAddress: context.ipAddress ?? null,
+        },
+        transaction,
+      );
+      await this.audit.record(
+        {
+          ...this.userAuditContext(context, user.id),
+          category: 'security',
+          action: 'identity.external-session.created',
+          resourceType: 'identity.session',
+          resourceId: session.id,
+        },
+        transaction,
+      );
+      return { session, user };
+    });
+    return {
+      sessionId: result.session.id,
+      sessionToken,
+      csrfToken,
+      expiresAt: result.session.expiresAt,
+      user: result.user,
+    };
   }
 
   csrfMatches(value: string, expected: string): boolean {
@@ -529,6 +613,17 @@ export class IdentityService {
     const actual = Buffer.from(digest(value));
     const expected = Buffer.from(expectedDigest);
     return actual.length === expected.length && timingSafeEqual(actual, expected);
+  }
+
+  private parseExternalIdentity(reference: ExternalIdentityReference): ExternalIdentityReference {
+    return z
+      .object({
+        provider: z.literal('wechat_mini_program'),
+        appId: z.string().trim().min(1).max(64),
+        subject: z.string().trim().min(1).max(256),
+        unionId: z.string().trim().min(1).max(256).nullable().optional(),
+      })
+      .parse(reference);
   }
 
   private userAuditContext(

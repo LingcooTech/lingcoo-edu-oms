@@ -9,12 +9,15 @@ export const PAYMENT_SETTINGS: SettingDefinition[] = [
     groupLabel: '支付服务',
     groupOrder: 70,
     label: '默认支付 Provider',
-    description: 'Starter 默认提供可测试的 Mock Provider。',
+    description: 'Starter 默认提供可测试的 Mock Provider，也支持微信支付 APIv3。',
     kind: 'internal',
-    schema: z.enum(['mock']),
+    schema: z.enum(['mock', 'wechat_pay']),
     defaultValue: 'mock',
     control: 'select',
-    options: [{ label: 'Mock', value: 'mock' }],
+    options: [
+      { label: 'Mock', value: 'mock' },
+      { label: '微信支付', value: 'wechat_pay' },
+    ],
   },
   {
     key: 'payments.mock.app-id',

@@ -1,6 +1,7 @@
 export { PeopleService } from './application/people.service.js';
 export type {
   EducationDirectory,
+  GuardianSelfDirectory,
   StudentLessonAccountProvisioner,
   StudentDirectory,
   StudentOnboardingDirectory,

@@ -245,6 +245,7 @@ export class PeopleRepository {
     studentId: string,
     input: CreateGuardianAndBindRequest,
     executor: DatabaseTransaction,
+    verificationSource: 'admin' | 'wechat' = 'admin',
   ) {
     const { relationship, isPrimary, ...guardianInput } = input;
     const [guardian] = await executor.insert(peopleGuardians).values(guardianInput).returning();
@@ -257,7 +258,7 @@ export class PeopleRepository {
         relationship,
         isPrimary,
         verificationStatus: 'verified',
-        verificationSource: 'admin',
+        verificationSource,
         verifiedAt: new Date(),
       })
       .returning();
@@ -268,6 +269,7 @@ export class PeopleRepository {
     studentId: string,
     input: BindExistingGuardianRequest,
     executor: DatabaseTransaction,
+    verificationSource: 'admin' | 'wechat' = 'admin',
   ) {
     if (input.isPrimary) await this.clearPrimaryGuardian(studentId, executor);
     const [binding] = await executor
@@ -276,7 +278,7 @@ export class PeopleRepository {
         studentId,
         ...input,
         verificationStatus: 'verified',
-        verificationSource: 'admin',
+        verificationSource,
         verifiedAt: new Date(),
       })
       .returning();
@@ -289,6 +291,45 @@ export class PeopleRepository {
       .from(peopleGuardians)
       .where(eq(peopleGuardians.id, id))
       .limit(1);
+    return record ?? null;
+  }
+
+  async findGuardianByIdentityUserId(
+    identityUserId: string,
+    executor: DatabaseExecutor = this.database.db,
+  ) {
+    const [record] = await executor
+      .select()
+      .from(peopleGuardians)
+      .where(eq(peopleGuardians.identityUserId, identityUserId))
+      .limit(1);
+    return record ?? null;
+  }
+
+  findGuardiansByPhone(phone: string, executor: DatabaseExecutor = this.database.db) {
+    return executor
+      .select()
+      .from(peopleGuardians)
+      .where(eq(peopleGuardians.phone, phone))
+      .orderBy(asc(peopleGuardians.createdAt), asc(peopleGuardians.id));
+  }
+
+  async linkGuardianIdentity(
+    guardianId: string,
+    identityUserId: string,
+    executor: DatabaseTransaction,
+  ) {
+    const [record] = await executor
+      .update(peopleGuardians)
+      .set({
+        identityUserId,
+        revision: sql`${peopleGuardians.revision} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(peopleGuardians.id, guardianId), sql`${peopleGuardians.identityUserId} is null`),
+      )
+      .returning();
     return record ?? null;
   }
 

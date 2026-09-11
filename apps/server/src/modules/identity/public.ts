@@ -6,4 +6,5 @@ export type {
   PublicIdentityUser,
   IdentityUserPage,
   ResolvedIdentitySession,
+  ExternalIdentityReference,
 } from './domain/model.js';

@@ -6,6 +6,7 @@ import type {
   DatabaseTransaction,
 } from '../../../../database/database.js';
 import type {
+  ExternalIdentityReference,
   IdentityActionPurpose,
   IdentityUserPage,
   PublicIdentitySession,
@@ -14,6 +15,7 @@ import type {
 } from '../../domain/model.js';
 import {
   identityActionTokens,
+  identityExternalIdentities,
   identityPasswordCredentials,
   identitySessions,
   identityUsers,
@@ -75,6 +77,94 @@ export class IdentityRepository {
       .where(eq(identityUsers.email, email))
       .limit(1);
     return user ? publicUser(user) : null;
+  }
+
+  async findUserByPhone(
+    phone: string,
+    executor: DatabaseExecutor = this.database.db,
+  ): Promise<PublicIdentityUser | null> {
+    const [user] = await executor
+      .select()
+      .from(identityUsers)
+      .where(eq(identityUsers.phone, phone))
+      .limit(1);
+    return user ? publicUser(user) : null;
+  }
+
+  async findUserByExternalIdentity(
+    reference: ExternalIdentityReference,
+    executor: DatabaseExecutor = this.database.db,
+  ): Promise<PublicIdentityUser | null> {
+    const [record] = await executor
+      .select({ user: identityUsers })
+      .from(identityExternalIdentities)
+      .innerJoin(identityUsers, eq(identityUsers.id, identityExternalIdentities.userId))
+      .where(
+        and(
+          eq(identityExternalIdentities.provider, reference.provider),
+          eq(identityExternalIdentities.appId, reference.appId),
+          eq(identityExternalIdentities.subject, reference.subject),
+        ),
+      )
+      .limit(1);
+    return record ? publicUser(record.user) : null;
+  }
+
+  async findExternalIdentitySubjectForUser(
+    userId: string,
+    reference: Pick<ExternalIdentityReference, 'provider' | 'appId'>,
+    executor: DatabaseExecutor = this.database.db,
+  ): Promise<string | null> {
+    const [record] = await executor
+      .select({ subject: identityExternalIdentities.subject })
+      .from(identityExternalIdentities)
+      .where(
+        and(
+          eq(identityExternalIdentities.userId, userId),
+          eq(identityExternalIdentities.provider, reference.provider),
+          eq(identityExternalIdentities.appId, reference.appId),
+        ),
+      )
+      .limit(1);
+    return record?.subject ?? null;
+  }
+
+  async bindExternalIdentityToPhone(
+    input: ExternalIdentityReference & { phone: string },
+    executor: DatabaseExecutor,
+  ): Promise<PublicIdentityUser> {
+    const existing = await this.findUserByExternalIdentity(input, executor);
+    if (existing) return existing;
+
+    let user = await this.findUserByPhone(input.phone, executor);
+    if (!user) {
+      await executor
+        .insert(identityUsers)
+        .values({ phone: input.phone, mustChangePassword: false })
+        .onConflictDoNothing({ target: identityUsers.phone });
+      user = await this.findUserByPhone(input.phone, executor);
+    }
+    if (!user) throw new Error('Failed to create or resolve external identity user');
+
+    await executor
+      .insert(identityExternalIdentities)
+      .values({
+        userId: user.id,
+        provider: input.provider,
+        appId: input.appId,
+        subject: input.subject,
+        unionId: input.unionId ?? null,
+      })
+      .onConflictDoNothing({
+        target: [
+          identityExternalIdentities.provider,
+          identityExternalIdentities.appId,
+          identityExternalIdentities.subject,
+        ],
+      });
+    const linked = await this.findUserByExternalIdentity(input, executor);
+    if (!linked) throw new Error('Failed to link external identity');
+    return linked;
   }
 
   async findUserById(

@@ -79,11 +79,35 @@ export async function registerPaymentRoutes(app: FastifyInstance, service: Payme
     },
     async (request) =>
       service.callback(
+        'mock',
         parse(mockPaymentCallbackRequestSchema, request.body),
         firstHeader(request.headers['x-payment-signature']),
         (request as FastifyRequest & { paymentRawBody: Buffer }).paymentRawBody,
         auditContextFromRequest(request, { type: 'provider', label: 'mock' }),
       ),
+  );
+  app.post(
+    '/api/payments/providers/wechat-pay/callback',
+    {
+      config: { access: { public: true }, rateLimit: { max: 120, timeWindow: '1 minute' } },
+      preParsing: captureRawBody,
+    },
+    async (request) => {
+      await service.callback(
+        'wechat_pay',
+        request.body,
+        firstHeader(request.headers['wechatpay-signature']),
+        (request as FastifyRequest & { paymentRawBody: Buffer }).paymentRawBody,
+        auditContextFromRequest(request, { type: 'provider', label: 'wechat_pay' }),
+        {
+          'wechatpay-timestamp': firstHeader(request.headers['wechatpay-timestamp']),
+          'wechatpay-nonce': firstHeader(request.headers['wechatpay-nonce']),
+          'wechatpay-signature': firstHeader(request.headers['wechatpay-signature']),
+          'wechatpay-serial': firstHeader(request.headers['wechatpay-serial']),
+        },
+      );
+      return { code: 'SUCCESS', message: '成功' };
+    },
   );
 }
 

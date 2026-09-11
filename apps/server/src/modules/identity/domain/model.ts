@@ -1,5 +1,13 @@
 export type IdentityUserStatus = 'active' | 'disabled';
 export type IdentityActionPurpose = 'email_verification' | 'password_reset';
+export type ExternalIdentityProvider = 'wechat_mini_program';
+
+export interface ExternalIdentityReference {
+  provider: ExternalIdentityProvider;
+  appId: string;
+  subject: string;
+  unionId?: string | null;
+}
 
 export interface PublicIdentityUser {
   id: string;

@@ -2,11 +2,11 @@ import { ApiError } from '@lingcoo-tech/http';
 import type {
   CreatePaymentIntentRequest,
   CreatePaymentRefundRequest,
-  MockPaymentCallbackRequest,
   PaymentCallbackQuery,
   PaymentIntentDetail,
   PaymentIntentQuery,
   PaymentIntentStatus,
+  PaymentProvider,
   PaymentRefund,
   PaymentRefundQuery,
   PaymentTransactionQuery,
@@ -15,6 +15,7 @@ import type {
 import type { DatabaseHandle, DatabaseTransaction } from '../../../database/database.js';
 import type { AuditContext, AuditWriter } from '../../audit/public.js';
 import type {
+  PaymentCallbackHeaders,
   PaymentFactReceiver,
   PaymentProviderAdapter,
   VerifiedPaymentCallback,
@@ -38,6 +39,7 @@ export class PaymentsService {
   async createIntent(
     input: CreatePaymentIntentRequest,
     context: ActorContext,
+    providerContext?: { payerOpenId?: string },
   ): Promise<PaymentIntentDetail> {
     const provider = this.provider(input.provider ?? 'mock');
     const configuration = await provider.configuration();
@@ -99,6 +101,7 @@ export class PaymentsService {
           amountMinor: claimed.amountMinor,
           currency: claimed.currency,
           description: claimed.description,
+          providerContext,
         });
         await this.database.transaction(async (transaction) => {
           const locked = await this.requireLockedIntent(claimed.id, transaction);
@@ -116,6 +119,8 @@ export class PaymentsService {
                 amountMinor: locked.amountMinor,
                 currency: locked.currency,
                 status: result.status,
+                clientPayload: result.clientPayload,
+                providerMetadata: result.providerMetadata,
               },
               transaction,
             );
@@ -211,6 +216,7 @@ export class PaymentsService {
       context,
       'payment.intent.closed',
     );
+    await this.emitFact(id);
     return this.getIntent(id);
   }
 
@@ -242,6 +248,8 @@ export class PaymentsService {
               amountMinor: locked.amountMinor,
               currency: locked.currency,
               status: created.status,
+              clientPayload: created.clientPayload,
+              providerMetadata: created.providerMetadata,
             },
             databaseTransaction,
           ));
@@ -257,7 +265,9 @@ export class PaymentsService {
       true,
       context,
       'payment.intent.reconciled',
+      result.providerMetadata,
     );
+    await this.emitFact(id);
     return this.getIntent(id);
   }
 
@@ -266,6 +276,13 @@ export class PaymentsService {
     input: CreatePaymentRefundRequest,
     context: ActorContext,
   ): Promise<PaymentRefund> {
+    const refundIntent = await this.getIntentRecord(id);
+    await this.facts.assertRefundAllowed?.({
+      intentId: refundIntent.id,
+      merchantReference: refundIntent.merchantReference,
+      amountMinor: input.amountMinor,
+      reason: input.reason,
+    });
     const reservation = await this.database.transaction(async (transaction) => {
       const intent = await this.requireLockedIntent(id, transaction);
       const duplicate = await this.repository.findRefundByRequest(
@@ -313,6 +330,8 @@ export class PaymentsService {
         providerTransactionId: transaction.providerTransactionId,
         refundId: reservation.id,
         amountMinor: reservation.amountMinor,
+        totalAmountMinor: intent.amountMinor,
+        currency: intent.currency,
         reason: reservation.reason,
       });
       const saved = await this.database.transaction(async (databaseTransaction) => {
@@ -363,12 +382,22 @@ export class PaymentsService {
   }
 
   async callback(
-    input: MockPaymentCallbackRequest,
+    providerKey: PaymentProvider,
+    input: unknown,
     signature: string | undefined,
     rawBody: Buffer,
     context: AuditContext,
+    headers: PaymentCallbackHeaders = {},
   ) {
-    const verified = await this.provider('mock').verifyCallback(input, signature, rawBody);
+    const verified = await this.provider(providerKey).verifyCallback(
+      input,
+      signature,
+      rawBody,
+      headers,
+    );
+    if (verified.provider !== providerKey) {
+      throw new ApiError(400, 'PAYMENT_CALLBACK_PROVIDER_MISMATCH', '支付回调 Provider 不匹配');
+    }
     const result = await this.database.transaction(async (transaction) => {
       const providerTransaction = await this.repository.findTransactionByProviderId(
         verified.provider,
@@ -416,6 +445,7 @@ export class PaymentsService {
         status,
         false,
         transaction,
+        verified.providerMetadata,
       );
       const next = this.callbackIntentStatus(intent.status, status);
       const updated = await this.repository.setIntentStatus(
@@ -461,6 +491,7 @@ export class PaymentsService {
     queried: boolean,
     context: ActorContext,
     action: string,
+    providerMetadata?: Record<string, unknown>,
   ) {
     await this.database.transaction(async (transaction) => {
       const intent = await this.requireLockedIntent(intentId, transaction);
@@ -469,7 +500,13 @@ export class PaymentsService {
       const closed = intent.status === 'closed';
       const regressive = (paid && next !== 'succeeded') || (closed && next !== 'closed');
       if (!regressive) {
-        await this.repository.setTransactionStatus(transactionId, status, queried, transaction);
+        await this.repository.setTransactionStatus(
+          transactionId,
+          status,
+          queried,
+          transaction,
+          providerMetadata,
+        );
       }
       if (!paid && !regressive) {
         await this.repository.setIntentStatus(
@@ -575,7 +612,7 @@ export class PaymentsService {
     return {
       id: intent.id,
       merchantReference: intent.merchantReference,
-      provider: intent.provider as 'mock',
+      provider: intent.provider as 'mock' | 'wechat_pay',
       amountMinor: intent.amountMinor,
       refundedAmountMinor: intent.refundedAmountMinor,
       currency: intent.currency,
@@ -614,11 +651,12 @@ function transactionView(
   return {
     id: record.id,
     intentId: record.intentId,
-    provider: record.provider as 'mock',
+    provider: record.provider as 'mock' | 'wechat_pay',
     providerTransactionId: record.providerTransactionId,
     amountMinor: record.amountMinor,
     currency: record.currency,
     status: record.status as 'pending' | 'succeeded' | 'failed' | 'closed' | 'unknown',
+    clientPayload: record.clientPayload ?? null,
     lastQueriedAt: record.lastQueriedAt?.toISOString() ?? null,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
@@ -645,7 +683,7 @@ function callbackView(
   return {
     id: record.id,
     intentId: record.intentId,
-    provider: record.provider as 'mock',
+    provider: record.provider as 'mock' | 'wechat_pay',
     providerEventId: record.providerEventId,
     providerTransactionId: record.providerTransactionId,
     eventType: record.eventType as 'payment.succeeded' | 'payment.failed' | 'payment.closed',

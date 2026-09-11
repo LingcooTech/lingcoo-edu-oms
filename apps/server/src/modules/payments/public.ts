@@ -9,6 +9,7 @@ export { NOOP_PAYMENT_FACT_RECEIVER } from './domain/model.js';
 export { PAYMENT_SETTINGS } from './domain/payment-settings.js';
 export { WECHAT_PAY_SETTINGS } from './domain/wechat-pay-settings.js';
 export { MockPaymentProvider } from './infrastructure/mock-payment.provider.js';
+export { WechatPayV3ProviderAdapter } from './infrastructure/wechat-pay-v3.provider.js';
 export {
   createWechatPayConnectionTester,
   WechatPayV3Client,

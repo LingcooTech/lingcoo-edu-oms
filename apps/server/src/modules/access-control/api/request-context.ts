@@ -6,6 +6,9 @@ import type {
 
 export type AccessPolicy =
   | { public: true }
+  // A valid OMS session is sufficient. Use this for client-facing APIs that must not
+  // inherit administrative roles or permissions (for example, guardian mini-program APIs).
+  | { authenticated: true }
   | {
       permissions: readonly PermissionKey[];
       allowUnscopedEducation?: boolean;

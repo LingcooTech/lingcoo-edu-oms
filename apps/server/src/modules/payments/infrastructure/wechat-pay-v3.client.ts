@@ -4,7 +4,7 @@ import { ApiError } from '@lingcoo-tech/http';
 
 import type { SettingsReader } from '../../settings/public.js';
 
-interface WechatPayConfiguration {
+export interface WechatPayConfiguration {
   appId: string;
   merchantId: string;
   merchantSerialNumber: string;
@@ -13,6 +13,42 @@ interface WechatPayConfiguration {
   publicKeyId: string;
   publicKey: string;
   notifyUrl: string;
+}
+
+export interface WechatPayJsapiTransactionInput {
+  description: string;
+  outTradeNo: string;
+  amountMinor: number;
+  currency: string;
+  payerOpenId: string;
+}
+
+export interface WechatPayJsapiTransactionResponse {
+  prepay_id: string;
+}
+
+export interface WechatPayTransactionResponse {
+  appid?: string;
+  mchid?: string;
+  out_trade_no?: string;
+  transaction_id?: string;
+  trade_state?: string;
+  success_time?: string;
+  amount?: { total?: number; currency?: string };
+}
+
+export interface WechatPayRefundInput {
+  outTradeNo: string;
+  refundId: string;
+  amountMinor: number;
+  totalAmountMinor: number;
+  currency: string;
+  reason: string;
+}
+
+export interface WechatPayRefundResponse {
+  refund_id?: string;
+  status?: string;
 }
 
 export class WechatPayV3Client {
@@ -72,6 +108,51 @@ export class WechatPayV3Client {
 
   async testConnection(signal: AbortSignal): Promise<void> {
     await this.call('GET', '/v3/certificates', undefined, signal);
+  }
+
+  async createJsapiTransaction(
+    input: WechatPayJsapiTransactionInput,
+  ): Promise<WechatPayJsapiTransactionResponse> {
+    const configuration = await this.configuration();
+    return this.call('POST', '/v3/pay/transactions/jsapi', {
+      appid: configuration.appId,
+      mchid: configuration.merchantId,
+      description: input.description,
+      out_trade_no: input.outTradeNo,
+      notify_url: configuration.notifyUrl,
+      amount: { total: input.amountMinor, currency: input.currency },
+      payer: { openid: input.payerOpenId },
+    });
+  }
+
+  async queryTransaction(outTradeNo: string): Promise<WechatPayTransactionResponse> {
+    const configuration = await this.configuration();
+    return this.call(
+      'GET',
+      `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}?mchid=${encodeURIComponent(configuration.merchantId)}`,
+    );
+  }
+
+  async closeTransaction(outTradeNo: string): Promise<Record<string, never>> {
+    const configuration = await this.configuration();
+    return this.call(
+      'POST',
+      `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}/close`,
+      { mchid: configuration.merchantId },
+    );
+  }
+
+  async refundTransaction(input: WechatPayRefundInput): Promise<WechatPayRefundResponse> {
+    return this.call('POST', '/v3/refund/domestic/refunds', {
+      out_trade_no: input.outTradeNo,
+      out_refund_no: input.refundId,
+      reason: input.reason,
+      amount: {
+        refund: input.amountMinor,
+        total: input.totalAmountMinor,
+        currency: input.currency,
+      },
+    });
   }
 
   async call<T>(
