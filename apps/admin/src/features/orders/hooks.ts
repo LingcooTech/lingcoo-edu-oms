@@ -2,16 +2,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   CreateOfflineLessonOrderRequest,
   LessonOrderListQuery,
+  LessonOrderProductType,
 } from '@lingcoo-edu-oms/contracts';
 
 import { lessonCommerceApi } from './api';
 
 const orderKeys = { all: ['education', 'orders'] as const };
 
-export function useLessonOrders(
-  institutionId: string | null,
-  input: Partial<LessonOrderListQuery>,
-) {
+export type LessonOrderFilters = Omit<Partial<LessonOrderListQuery>, 'productType'> & {
+  productType?: LessonOrderProductType;
+};
+
+export function useLessonOrders(institutionId: string | null, input: LessonOrderFilters) {
   return useQuery({
     queryKey: [...orderKeys.all, institutionId, input],
     queryFn: () => lessonCommerceApi.list(institutionId!, input),

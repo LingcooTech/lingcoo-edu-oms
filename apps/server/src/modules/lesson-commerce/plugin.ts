@@ -5,6 +5,10 @@ import type { AuditWriter } from '../audit/public.js';
 import type { IdempotencyService } from '../idempotency/public.js';
 import type { LessonPurchaseGrantLedger } from '../lesson-accounts/public.js';
 import type { LessonPackageDirectory } from '../lesson-products/public.js';
+import type {
+  PeriodCardEntitlementIssuer,
+  PeriodCardProductDirectory,
+} from '../period-cards/public.js';
 import type { SettingsReader } from '../settings/public.js';
 import { LessonCommerceService } from './application/lesson-commerce.service.js';
 import { registerLessonCommerceRoutes } from './api/routes.js';
@@ -21,6 +25,8 @@ export interface LessonCommerceDependencies {
   institutions: LessonCommerceInstitutionDirectory;
   people: LessonCommercePeopleDirectory;
   products: LessonPackageDirectory;
+  periodCardProducts: PeriodCardProductDirectory;
+  periodCardEntitlements: PeriodCardEntitlementIssuer;
   lessons: LessonPurchaseGrantLedger;
   payments: LessonCommercePayments;
   payers: WechatMiniPayerDirectory;
@@ -39,6 +45,8 @@ export function createLessonCommerceService(dependencies: LessonCommerceDependen
       dependencies.institutions,
       dependencies.people,
       dependencies.products,
+      dependencies.periodCardProducts,
+      dependencies.periodCardEntitlements,
       dependencies.lessons,
       dependencies.payments,
       dependencies.payers,

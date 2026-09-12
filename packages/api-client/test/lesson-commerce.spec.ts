@@ -1,4 +1,5 @@
 import { createApiClient, createLessonCommerceApi } from '@lingcoo-edu-oms/api-client';
+import { createLessonOrderRequestSchema } from '@lingcoo-edu-oms/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
 function order() {
@@ -10,12 +11,22 @@ function order() {
     studentName: '小满',
     guardianId: '44444444-4444-4444-8444-444444444444',
     guardianName: '小满妈妈',
+    productType: 'lesson_package',
     packageId: '55555555-5555-4555-8555-555555555555',
     packageVersionId: '66666666-6666-4666-8666-666666666666',
     packageVersion: 2,
     packageName: '通用课时包',
     baseUnits: 20,
     bonusUnits: 2,
+    periodCardProductId: null,
+    periodCardProductVersionId: null,
+    periodCardProductVersion: null,
+    periodCardProductName: null,
+    periodCardMode: null,
+    periodCardUsageLimit: null,
+    periodCardDurationUnit: null,
+    periodCardDurationCount: null,
+    periodCardActivationPolicy: null,
     channel: 'online',
     listedAmountMinor: 12_800,
     amountMinor: 12_800,
@@ -28,6 +39,7 @@ function order() {
     receiptNo: 'RC20260911160000ABCDEF123456',
     paymentIntentId: null,
     grantMovementId: null,
+    periodCardEntitlementId: null,
     status: 'grant_failed',
     failureCode: 'TEMPORARY_ERROR',
     failureMessage: '暂时失败',
@@ -42,6 +54,25 @@ function order() {
 }
 
 describe('lesson commerce API client', () => {
+  it('normalizes the legacy online payload and accepts a period card product', () => {
+    const institutionId = '22222222-2222-4222-8222-222222222222';
+    const studentId = '33333333-3333-4333-8333-333333333333';
+    const packageId = '55555555-5555-4555-8555-555555555555';
+    const periodCardProductId = '88888888-8888-4888-8888-888888888888';
+
+    expect(
+      createLessonOrderRequestSchema.parse({ institutionId, studentId, packageId }),
+    ).toMatchObject({ productType: 'lesson_package', packageId });
+    expect(
+      createLessonOrderRequestSchema.parse({
+        institutionId,
+        studentId,
+        productType: 'period_card',
+        periodCardProductId,
+      }),
+    ).toMatchObject({ productType: 'period_card', periodCardProductId });
+  });
+
   it('lists institution orders and requests a grant retry with CSRF', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>();
     fetch
@@ -61,11 +92,11 @@ describe('lesson commerce API client', () => {
     );
     const institutionId = '22222222-2222-4222-8222-222222222222';
 
-    await api.list(institutionId, { status: 'grant_failed' });
+    await api.list(institutionId, { productType: 'period_card', status: 'grant_failed' });
     await api.retryGrant(institutionId, order().id);
 
     expect(fetch.mock.calls[0]?.[0]).toContain(
-      `/api/institutions/${institutionId}/orders?page=1&pageSize=20&status=grant_failed`,
+      `/api/institutions/${institutionId}/orders?page=1&pageSize=20&productType=period_card&status=grant_failed`,
     );
     const retry = fetch.mock.calls[1];
     expect(retry?.[0]).toContain(`/orders/${order().id}/actions/retry-grant`);
@@ -139,6 +170,73 @@ describe('lesson commerce API client', () => {
     expect(new Headers(createRequest?.[1]?.headers).get('idempotency-key')).toBe(
       'offline-order-key',
     );
+    expect(JSON.parse(String(createRequest?.[1]?.body))).toMatchObject({
+      productType: 'lesson_package',
+      packageId: offlineOrder.packageId,
+    });
     expect(fetch.mock.calls[1]?.[0]).toContain(`/orders/${offlineOrder.id}/receipt`);
+  });
+
+  it('creates a period card offline order without lesson package fields', async () => {
+    const periodCardOrder = {
+      ...order(),
+      productType: 'period_card',
+      packageId: null,
+      packageVersionId: null,
+      packageVersion: null,
+      packageName: null,
+      baseUnits: null,
+      bonusUnits: null,
+      periodCardProductId: '88888888-8888-4888-8888-888888888888',
+      periodCardProductVersionId: '99999999-9999-4999-8999-999999999999',
+      periodCardProductVersion: 1,
+      periodCardProductName: '成长空间月卡',
+      periodCardMode: 'limited',
+      periodCardUsageLimit: 12,
+      periodCardDurationUnit: 'month',
+      periodCardDurationCount: 1,
+      periodCardActivationPolicy: 'on_first_use',
+      grantMovementId: null,
+      periodCardEntitlementId: null,
+      channel: 'offline',
+      provider: null,
+      paymentMethod: 'cash',
+      status: 'completed',
+      failureCode: null,
+      failureMessage: null,
+      expiresAt: null,
+      completedAt: '2026-09-11T08:07:00.000Z',
+    };
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(Response.json(periodCardOrder));
+    const api = createLessonCommerceApi(
+      createApiClient({ fetch, getCsrfToken: () => 'csrf-token' }),
+    );
+
+    const result = await api.createOffline(
+      periodCardOrder.institutionId,
+      {
+        student: {
+          kind: 'existing',
+          studentId: periodCardOrder.studentId,
+          guardianId: periodCardOrder.guardianId,
+        },
+        productType: 'period_card',
+        periodCardProductId: periodCardOrder.periodCardProductId,
+        paidAmountMinor: periodCardOrder.amountMinor,
+        paymentMethod: 'cash',
+        receivedAt: periodCardOrder.paidAt,
+      },
+      'period-card-offline-order-key',
+    );
+
+    expect(result.productType).toBe('period_card');
+    expect(result.periodCardProductId).toBe(periodCardOrder.periodCardProductId);
+    expect(result.packageId).toBeNull();
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+      productType: 'period_card',
+      periodCardProductId: periodCardOrder.periodCardProductId,
+    });
   });
 });

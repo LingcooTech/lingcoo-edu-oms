@@ -56,6 +56,18 @@ export const paymentIntentsForeignKeyTarget = pgTable('payment_intents', {
   id: uuid('id').primaryKey(),
 });
 
+export const periodCardProductsForeignKeyTarget = pgTable('period_card_products', {
+  id: uuid('id').primaryKey(),
+});
+
+export const periodCardProductVersionsForeignKeyTarget = pgTable('period_card_product_versions', {
+  id: uuid('id').primaryKey(),
+});
+
+export const periodCardEntitlementsForeignKeyTarget = pgTable('period_card_entitlements', {
+  id: uuid('id').primaryKey(),
+});
+
 export const guardiansForeignKeyTarget = pgTable('people_guardians', {
   id: uuid('id').primaryKey(),
 });

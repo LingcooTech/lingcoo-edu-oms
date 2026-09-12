@@ -9,6 +9,7 @@ import type {
   CreateOfflineLessonOrderRequest,
   LessonOrder,
   LessonOrderPaymentMethod,
+  LessonOrderProductType,
   LessonOrderStatus,
   LessonReceipt,
 } from '@lingcoo-edu-oms/contracts';
@@ -38,6 +39,8 @@ import { useCan } from '../access/PermissionContext';
 import { useLessonPackages } from '../lessons/hooks';
 import { useInstitutions, useOrganizationProfile } from '../organization/hooks';
 import { useGuardianBindings, useStudents } from '../people/hooks';
+import type { PeriodCardProduct } from '../period-cards/api';
+import { usePeriodCardProducts } from '../period-cards/hooks';
 import {
   useCreateOfflineLessonOrder,
   useLessonOrders,
@@ -64,6 +67,22 @@ const PAYMENT_METHOD: Record<LessonOrderPaymentMethod, string> = {
   other: '其他线下方式',
 };
 
+const PRODUCT_TYPE: Record<LessonOrderProductType, string> = {
+  lesson_package: '课时包',
+  period_card: '周期卡',
+};
+
+const PERIOD_UNIT: Record<PeriodCardProduct['durationUnit'], string> = {
+  day: '天',
+  week: '周',
+  month: '月',
+};
+
+const ACTIVATION_POLICY: Record<PeriodCardProduct['activationPolicy'], string> = {
+  immediate: '立即生效',
+  on_first_use: '首次使用激活',
+};
+
 type OfflineOrderForm = {
   studentKind: 'existing' | 'new';
   studentId?: string;
@@ -74,7 +93,9 @@ type OfflineOrderForm = {
   guardianName?: string;
   guardianPhone?: string;
   relationship?: string;
-  packageId: string;
+  productType: LessonOrderProductType;
+  packageId?: string;
+  periodCardProductId?: string;
   paidAmountYuan: number;
   paymentMethod: 'cash' | 'bank_transfer' | 'wechat_transfer' | 'other';
   receivedAt: string;
@@ -114,17 +135,20 @@ export function OrdersPage() {
   const institutions = useInstitutions({ page: 1, pageSize: 100, status: 'active' });
   const [institutionId, setInstitutionId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [productType, setProductType] = useState<LessonOrderProductType | undefined>();
   const [status, setStatus] = useState<LessonOrderStatus | undefined>();
   const [page, setPage] = useState(1);
   const [offlineOpen, setOfflineOpen] = useState(false);
   const [offlineIdempotencyKey, setOfflineIdempotencyKey] = useState(() => crypto.randomUUID());
   const [receipt, setReceipt] = useState<LessonReceipt | null>(null);
   const studentKind = Form.useWatch('studentKind', form) ?? 'existing';
+  const selectedProductType = Form.useWatch('productType', form) ?? 'lesson_package';
   const selectedStudentId = Form.useWatch('studentId', form) ?? null;
   const orders = useLessonOrders(institutionId, {
     page,
     pageSize: 20,
     search: search || undefined,
+    productType,
     status,
   });
   const students = useStudents(institutionId, { page: 1, pageSize: 500, status: 'active' });
@@ -134,6 +158,11 @@ export function OrdersPage() {
     offlineOpen && studentKind === 'existing',
   );
   const packages = useLessonPackages(institutionId, {
+    page: 1,
+    pageSize: 100,
+    status: 'active',
+  });
+  const periodCards = usePeriodCardProducts(institutionId, {
     page: 1,
     pageSize: 100,
     status: 'active',
@@ -173,6 +202,7 @@ export function OrdersPage() {
     setOfflineIdempotencyKey(crypto.randomUUID());
     form.setFieldsValue({
       studentKind: 'existing',
+      productType: 'lesson_package',
       paymentMethod: 'wechat_transfer',
       receivedAt: localDateTimeValue(),
     });
@@ -204,26 +234,42 @@ export function OrdersPage() {
                 isPrimary: true,
               },
             };
+      const payment = {
+        paidAmountMinor: Math.round(values.paidAmountYuan * 100),
+        paymentMethod: values.paymentMethod,
+        receivedAt: new Date(values.receivedAt).toISOString(),
+        paymentReference: nullable(values.paymentReference),
+        paymentNote: nullable(values.paymentNote),
+        priceAdjustmentReason: nullable(values.priceAdjustmentReason),
+      };
+      const command: CreateOfflineLessonOrderRequest =
+        values.productType === 'lesson_package'
+          ? {
+              student,
+              packageId: values.packageId!,
+              ...payment,
+            }
+          : {
+              student,
+              productType: 'period_card',
+              periodCardProductId: values.periodCardProductId!,
+              ...payment,
+            };
       const order = await createOffline.mutateAsync({
         institutionId,
         idempotencyKey: offlineIdempotencyKey,
-        command: {
-          student,
-          packageId: values.packageId,
-          paidAmountMinor: Math.round(values.paidAmountYuan * 100),
-          paymentMethod: values.paymentMethod,
-          receivedAt: new Date(values.receivedAt).toISOString(),
-          paymentReference: nullable(values.paymentReference),
-          paymentNote: nullable(values.paymentNote),
-          priceAdjustmentReason: nullable(values.priceAdjustmentReason),
-        },
+        command,
       });
       setOfflineOpen(false);
       if (order.status === 'completed') {
-        message.success('线下收款已补录，课时已到账');
+        message.success(
+          values.productType === 'lesson_package'
+            ? '线下收款已补录，商品已完成，课时权益已到账'
+            : '线下收款已补录，商品已完成，周期卡权益已到账',
+        );
         setReceipt(await receiptRequest.mutateAsync({ institutionId, orderId: order.id }));
       } else {
-        message.warning('收款已记录，但课时发放失败，请在订单列表中重试');
+        message.warning('收款已记录，但商品权益发放失败，请在订单列表中重试');
       }
     } catch (error) {
       if (error instanceof Error) message.error(error.message);
@@ -242,7 +288,7 @@ export function OrdersPage() {
   return (
     <PageContainer
       title="订单与收款"
-      description="线上和线下购课统一形成订单、收款事实、课时流水与可打印收据。"
+      description="线上和线下购买商品统一形成订单、收款事实、课时流水或周期卡权益与可打印收据。"
       actions={
         canManage ? (
           <Button
@@ -259,7 +305,7 @@ export function OrdersPage() {
       <Alert
         showIcon
         type="info"
-        message="线下购课必须从这里补录订单；赠课、补课和余额纠错仍走独立课时流水，不伪装成销售。"
+        message="线下收款必须从这里补录订单；课时包形成课时流水，周期卡形成独立权益，赠课、补课和余额纠错仍走独立课时流水。"
         style={{ marginBottom: 16 }}
       />
       <Card style={{ marginBottom: 16 }}>
@@ -280,10 +326,22 @@ export function OrdersPage() {
           <Input.Search
             allowClear
             prefix={<SearchOutlined />}
-            placeholder="订单号、学员、家长或课时包"
+            placeholder="订单号、学员、家长或商品"
             style={{ width: 280 }}
             onSearch={(value) => {
               setSearch(value.trim());
+              setPage(1);
+            }}
+          />
+          <Select
+            value={productType ?? 'all'}
+            style={{ width: 150 }}
+            options={[
+              { value: 'all', label: '全部' },
+              ...Object.entries(PRODUCT_TYPE).map(([value, label]) => ({ value, label })),
+            ]}
+            onChange={(value) => {
+              setProductType(value === 'all' ? undefined : (value as LessonOrderProductType));
               setPage(1);
             }}
           />
@@ -359,16 +417,36 @@ export function OrdersPage() {
                 ),
               },
               {
-                title: '课时商品',
-                width: 220,
-                render: (_, record) => (
-                  <Space direction="vertical" size={0}>
-                    <Typography.Text>{record.packageName}</Typography.Text>
-                    <Typography.Text type="secondary">
-                      {record.baseUnits} + 赠 {record.bonusUnits} · V{record.packageVersion}
-                    </Typography.Text>
-                  </Space>
-                ),
+                title: '商品',
+                width: 280,
+                render: (_, record) =>
+                  record.productType === 'lesson_package' ? (
+                    <Space direction="vertical" size={0}>
+                      <Space size={6}>
+                        <Tag color="blue">课时包</Tag>
+                        <Typography.Text>{record.packageName}</Typography.Text>
+                      </Space>
+                      <Typography.Text type="secondary">
+                        {record.baseUnits} + 赠 {record.bonusUnits} 课时 · V{record.packageVersion}
+                      </Typography.Text>
+                    </Space>
+                  ) : (
+                    <Space direction="vertical" size={0}>
+                      <Space size={6}>
+                        <Tag color="purple">周期卡</Tag>
+                        <Typography.Text>{record.periodCardProductName}</Typography.Text>
+                      </Space>
+                      <Typography.Text type="secondary">
+                        {record.periodCardDurationCount}
+                        {PERIOD_UNIT[record.periodCardDurationUnit]} ·{' '}
+                        {record.periodCardMode === 'unlimited'
+                          ? '不限次'
+                          : `限 ${record.periodCardUsageLimit} 次`}{' '}
+                        · {ACTIVATION_POLICY[record.periodCardActivationPolicy]} · V
+                        {record.periodCardProductVersion}
+                      </Typography.Text>
+                    </Space>
+                  ),
               },
               { title: '实收', dataIndex: 'amountMinor', width: 110, render: money },
               {
@@ -418,7 +496,11 @@ export function OrdersPage() {
                           if (!institutionId) return;
                           try {
                             await retry.mutateAsync({ institutionId, orderId: record.id });
-                            message.success('课时发放已完成');
+                            message.success(
+                              record.productType === 'period_card'
+                                ? '周期卡权益发放已完成'
+                                : '课时权益发放已完成',
+                            );
                           } catch (error) {
                             message.error(error instanceof Error ? error.message : '重试失败');
                           }
@@ -445,6 +527,9 @@ export function OrdersPage() {
         guardiansLoading={guardians.isPending}
         packages={packages.data?.items ?? []}
         packagesLoading={packages.isPending}
+        periodCards={periodCards.data?.items ?? []}
+        periodCardsLoading={periodCards.isPending}
+        productType={selectedProductType}
         submitting={createOffline.isPending}
         onCancel={() => setOfflineOpen(false)}
         onSubmit={() => void submitOfflineOrder()}
@@ -485,6 +570,9 @@ function OfflineOrderModal({
   guardiansLoading,
   packages,
   packagesLoading,
+  periodCards,
+  periodCardsLoading,
+  productType,
   submitting,
   onCancel,
   onSubmit,
@@ -509,13 +597,16 @@ function OfflineOrderModal({
     priceAmount: number;
   }>;
   packagesLoading: boolean;
+  periodCards: PeriodCardProduct[];
+  periodCardsLoading: boolean;
+  productType: LessonOrderProductType;
   submitting: boolean;
   onCancel: () => void;
   onSubmit: () => void;
 }) {
   return (
     <Modal
-      title="补录线下收款并发放课时"
+      title="补录线下收款并发放商品权益"
       open={open}
       width={760}
       okText="确认收款并发放"
@@ -527,7 +618,7 @@ function OfflineOrderModal({
       <Alert
         type="warning"
         showIcon
-        message="请确认款项已经实际收到。提交后将创建正式订单并自动增加学员课时。"
+        message="请确认款项已经实际收到。提交后将创建正式订单，并自动发放课时或周期卡权益。"
         style={{ marginBottom: 16 }}
       />
       <Form form={form} layout="vertical">
@@ -606,22 +697,57 @@ function OfflineOrderModal({
           </div>
         )}
         <Divider />
+        <Form.Item name="productType" label="商品类型" rules={[{ required: true }]}>
+          <Radio.Group
+            optionType="button"
+            options={[
+              { label: '课时包', value: 'lesson_package' },
+              { label: '周期卡', value: 'period_card' },
+            ]}
+            onChange={() => {
+              form.setFieldsValue({ packageId: undefined, periodCardProductId: undefined });
+              form.setFieldValue('paidAmountYuan', undefined);
+            }}
+          />
+        </Form.Item>
         <div className="two-column-form-grid">
-          <Form.Item name="packageId" label="课时商品" rules={[{ required: true }]}>
-            <Select
-              showSearch
-              optionFilterProp="label"
-              loading={packagesLoading}
-              options={packages.map((item) => ({
-                label: `${item.name} · ${item.baseUnits + item.bonusUnits}课时 · ${money(item.priceAmount)}`,
-                value: item.id,
-              }))}
-              onChange={(value) => {
-                const selected = packages.find((item) => item.id === value);
-                if (selected) form.setFieldValue('paidAmountYuan', selected.priceAmount / 100);
-              }}
-            />
-          </Form.Item>
+          {productType === 'lesson_package' ? (
+            <Form.Item name="packageId" label="课时包商品" rules={[{ required: true }]}>
+              <Select
+                showSearch
+                optionFilterProp="label"
+                loading={packagesLoading}
+                options={packages.map((item) => ({
+                  label: `${item.name} · ${item.baseUnits + item.bonusUnits}课时 · ${money(item.priceAmount)}`,
+                  value: item.id,
+                }))}
+                onChange={(value) => {
+                  const selected = packages.find((item) => item.id === value);
+                  if (selected) form.setFieldValue('paidAmountYuan', selected.priceAmount / 100);
+                }}
+              />
+            </Form.Item>
+          ) : (
+            <Form.Item
+              name="periodCardProductId"
+              label="周期卡商品"
+              rules={[{ required: true, message: '请选择周期卡商品' }]}
+            >
+              <Select
+                showSearch
+                optionFilterProp="label"
+                loading={periodCardsLoading}
+                options={periodCards.map((item) => ({
+                  label: `${item.name} · ${item.durationCount}${PERIOD_UNIT[item.durationUnit]} · ${item.mode === 'unlimited' ? '不限次' : `限${item.usageLimit}次`} · ${ACTIVATION_POLICY[item.activationPolicy]} · ${money(item.priceAmount)}`,
+                  value: item.id,
+                }))}
+                onChange={(value) => {
+                  const selected = periodCards.find((item) => item.id === value);
+                  if (selected) form.setFieldValue('paidAmountYuan', selected.priceAmount / 100);
+                }}
+              />
+            </Form.Item>
+          )}
           <Form.Item name="paidAmountYuan" label="实收金额（元）" rules={[{ required: true }]}>
             <InputNumber min={0.01} precision={2} prefix="¥" style={{ width: '100%' }} />
           </Form.Item>
@@ -685,7 +811,20 @@ function ReceiptView({ receipt }: { receipt: LessonReceipt }) {
           {order.channel === 'online' ? '线上小程序' : '线下补录'}
         </Descriptions.Item>
         <Descriptions.Item label="收款事由" span={2}>
-          {order.packageName}，基础 {order.baseUnits} 课时，赠送 {order.bonusUnits} 课时
+          {order.productType === 'lesson_package' ? (
+            <>
+              {order.packageName}，基础 {order.baseUnits} 课时，赠送 {order.bonusUnits} 课时
+            </>
+          ) : (
+            <>
+              {order.periodCardProductName}，{order.periodCardDurationCount}
+              {PERIOD_UNIT[order.periodCardDurationUnit]}，
+              {order.periodCardMode === 'unlimited'
+                ? '不限次'
+                : `限 ${order.periodCardUsageLimit} 次`}
+              ，{ACTIVATION_POLICY[order.periodCardActivationPolicy]}
+            </>
+          )}
         </Descriptions.Item>
         <Descriptions.Item label="人民币（小写）">{money(order.amountMinor)}</Descriptions.Item>
         <Descriptions.Item label="人民币（大写）">{receipt.amountUppercase}</Descriptions.Item>

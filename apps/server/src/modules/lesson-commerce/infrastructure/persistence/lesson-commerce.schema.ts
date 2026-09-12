@@ -18,6 +18,9 @@ import {
   lessonPackageTemplatesForeignKeyTarget,
   lessonPackageVersionsForeignKeyTarget,
   paymentIntentsForeignKeyTarget,
+  periodCardEntitlementsForeignKeyTarget,
+  periodCardProductsForeignKeyTarget,
+  periodCardProductVersionsForeignKeyTarget,
   studentsForeignKeyTarget,
 } from '../../../../database/foreign-key-targets.js';
 
@@ -40,16 +43,40 @@ export const lessonCommerceOrders = pgTable(
     createdByUserId: uuid('created_by_user_id')
       .notNull()
       .references(() => identityUsersForeignKeyTarget.id, { onDelete: 'restrict' }),
-    packageId: uuid('package_id')
+    productType: varchar('product_type', { length: 24 })
+      .$type<'lesson_package' | 'period_card'>()
       .notNull()
-      .references(() => lessonPackageTemplatesForeignKeyTarget.id, { onDelete: 'restrict' }),
-    packageVersionId: uuid('package_version_id')
-      .notNull()
-      .references(() => lessonPackageVersionsForeignKeyTarget.id, { onDelete: 'restrict' }),
-    packageVersion: integer('package_version').notNull(),
-    packageName: varchar('package_name', { length: 160 }).notNull(),
-    baseUnits: integer('base_units').notNull(),
-    bonusUnits: integer('bonus_units').notNull(),
+      .default('lesson_package'),
+    packageId: uuid('package_id').references(() => lessonPackageTemplatesForeignKeyTarget.id, {
+      onDelete: 'restrict',
+    }),
+    packageVersionId: uuid('package_version_id').references(
+      () => lessonPackageVersionsForeignKeyTarget.id,
+      { onDelete: 'restrict' },
+    ),
+    packageVersion: integer('package_version'),
+    packageName: varchar('package_name', { length: 160 }),
+    baseUnits: integer('base_units'),
+    bonusUnits: integer('bonus_units'),
+    periodCardProductId: uuid('period_card_product_id').references(
+      () => periodCardProductsForeignKeyTarget.id,
+      { onDelete: 'restrict' },
+    ),
+    periodCardProductVersionId: uuid('period_card_product_version_id').references(
+      () => periodCardProductVersionsForeignKeyTarget.id,
+      { onDelete: 'restrict' },
+    ),
+    periodCardProductVersion: integer('period_card_product_version'),
+    periodCardProductName: varchar('period_card_product_name', { length: 160 }),
+    periodCardMode: varchar('period_card_mode', { length: 20 }).$type<'limited' | 'unlimited'>(),
+    periodCardUsageLimit: integer('period_card_usage_limit'),
+    periodCardDurationUnit: varchar('period_card_duration_unit', { length: 20 }).$type<
+      'day' | 'week' | 'month'
+    >(),
+    periodCardDurationCount: integer('period_card_duration_count'),
+    periodCardActivationPolicy: varchar('period_card_activation_policy', { length: 24 }).$type<
+      'immediate' | 'on_first_use'
+    >(),
     channel: varchar('channel', { length: 16 })
       .$type<'online' | 'offline'>()
       .notNull()
@@ -73,6 +100,10 @@ export const lessonCommerceOrders = pgTable(
       {
         onDelete: 'restrict',
       },
+    ),
+    periodCardEntitlementId: uuid('period_card_entitlement_id').references(
+      () => periodCardEntitlementsForeignKeyTarget.id,
+      { onDelete: 'restrict' },
     ),
     status: varchar('status', { length: 32 })
       .$type<
@@ -101,15 +132,19 @@ export const lessonCommerceOrders = pgTable(
     uniqueIndex('lesson_commerce_orders_receipt_no_unique').on(table.receiptNo),
     uniqueIndex('lesson_commerce_orders_payment_intent_unique').on(table.paymentIntentId),
     uniqueIndex('lesson_commerce_orders_grant_movement_unique').on(table.grantMovementId),
+    uniqueIndex('lesson_commerce_orders_period_card_entitlement_unique').on(
+      table.periodCardEntitlementId,
+    ),
     index('lesson_commerce_orders_guardian_created_idx').on(table.guardianId, table.createdAt),
     index('lesson_commerce_orders_institution_created_idx').on(
       table.institutionId,
       table.createdAt,
     ),
     index('lesson_commerce_orders_student_created_idx').on(table.studentId, table.createdAt),
-    check('lesson_commerce_orders_package_version_check', sql`${table.packageVersion} > 0`),
-    check('lesson_commerce_orders_base_units_check', sql`${table.baseUnits} > 0`),
-    check('lesson_commerce_orders_bonus_units_check', sql`${table.bonusUnits} >= 0`),
+    check(
+      'lesson_commerce_orders_product_snapshot_check',
+      sql`(${table.productType} = 'lesson_package' and ${table.packageId} is not null and ${table.packageVersionId} is not null and ${table.packageVersion} > 0 and ${table.packageName} is not null and ${table.baseUnits} > 0 and ${table.bonusUnits} >= 0 and ${table.periodCardProductId} is null and ${table.periodCardProductVersionId} is null and ${table.periodCardProductVersion} is null and ${table.periodCardProductName} is null and ${table.periodCardMode} is null and ${table.periodCardUsageLimit} is null and ${table.periodCardDurationUnit} is null and ${table.periodCardDurationCount} is null and ${table.periodCardActivationPolicy} is null) or (${table.productType} = 'period_card' and ${table.packageId} is null and ${table.packageVersionId} is null and ${table.packageVersion} is null and ${table.packageName} is null and ${table.baseUnits} is null and ${table.bonusUnits} is null and ${table.periodCardProductId} is not null and ${table.periodCardProductVersionId} is not null and ${table.periodCardProductVersion} > 0 and ${table.periodCardProductName} is not null and ${table.periodCardMode} in ('limited','unlimited') and ((${table.periodCardMode} = 'limited' and ${table.periodCardUsageLimit} > 0) or (${table.periodCardMode} = 'unlimited' and ${table.periodCardUsageLimit} is null)) and ${table.periodCardDurationUnit} in ('day','week','month') and ${table.periodCardDurationCount} > 0 and ${table.periodCardActivationPolicy} in ('immediate','on_first_use'))`,
+    ),
     check('lesson_commerce_orders_channel_check', sql`${table.channel} in ('online','offline')`),
     check('lesson_commerce_orders_listed_amount_check', sql`${table.listedAmountMinor} >= 0`),
     check('lesson_commerce_orders_amount_check', sql`${table.amountMinor} > 0`),
@@ -145,7 +180,7 @@ export const lessonCommerceOrders = pgTable(
     ),
     check(
       'lesson_commerce_orders_completed_check',
-      sql`(${table.status} = 'completed') = (${table.completedAt} is not null and ${table.grantMovementId} is not null)`,
+      sql`(${table.status} = 'completed') = (${table.completedAt} is not null and ((${table.productType} = 'lesson_package' and ${table.grantMovementId} is not null and ${table.periodCardEntitlementId} is null) or (${table.productType} = 'period_card' and ${table.grantMovementId} is null and ${table.periodCardEntitlementId} is not null)))`,
     ),
   ],
 );

@@ -39,6 +39,9 @@ export async function registerLessonCommerceRoutes(
   app.get('/api/mini/lesson-packages', { config: authenticated }, async (request) =>
     service.listPackages(parse(packageQuerySchema, request.query).institutionId),
   );
+  app.get('/api/mini/period-card-products', { config: authenticated }, async (request) =>
+    service.listPeriodCards(parse(packageQuerySchema, request.query).institutionId),
+  );
   app.get('/api/mini/orders', { config: authenticated }, async (request) =>
     service.listForGuardian(userId(request), parse(lessonOrderListQuerySchema, request.query)),
   );

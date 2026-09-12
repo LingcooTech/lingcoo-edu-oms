@@ -98,7 +98,7 @@ export class LessonCommerceRepository {
     return record ?? null;
   }
 
-  async markCompleted(id: string, grantMovementId: string, executor: DatabaseTransaction) {
+  async markLessonCompleted(id: string, grantMovementId: string, executor: DatabaseTransaction) {
     const now = new Date();
     const [record] = await executor
       .update(lessonCommerceOrders)
@@ -114,8 +114,38 @@ export class LessonCommerceRepository {
       .where(
         and(
           eq(lessonCommerceOrders.id, id),
+          eq(lessonCommerceOrders.productType, 'lesson_package'),
           sql`${lessonCommerceOrders.status} in ('paid_pending_grant','grant_failed')`,
           sql`${lessonCommerceOrders.grantMovementId} is null`,
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async markPeriodCardCompleted(
+    id: string,
+    periodCardEntitlementId: string,
+    executor: DatabaseTransaction,
+  ) {
+    const now = new Date();
+    const [record] = await executor
+      .update(lessonCommerceOrders)
+      .set({
+        status: 'completed',
+        periodCardEntitlementId,
+        completedAt: now,
+        failureCode: null,
+        failureMessage: null,
+        revision: sql`${lessonCommerceOrders.revision} + 1`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(lessonCommerceOrders.id, id),
+          eq(lessonCommerceOrders.productType, 'period_card'),
+          sql`${lessonCommerceOrders.status} in ('paid_pending_grant','grant_failed')`,
+          sql`${lessonCommerceOrders.periodCardEntitlementId} is null`,
         ),
       )
       .returning();
@@ -141,7 +171,7 @@ export class LessonCommerceRepository {
         and(
           eq(lessonCommerceOrders.id, id),
           sql`${lessonCommerceOrders.status} in ('paid_pending_grant','grant_failed')`,
-          sql`${lessonCommerceOrders.grantMovementId} is null`,
+          sql`${lessonCommerceOrders.grantMovementId} is null and ${lessonCommerceOrders.periodCardEntitlementId} is null`,
         ),
       )
       .returning();
@@ -175,6 +205,7 @@ export class LessonCommerceRepository {
 
   private async list(filters: SQL[], input: LessonOrderListQuery) {
     if (input.status) filters.push(eq(lessonCommerceOrders.status, input.status));
+    if (input.productType) filters.push(eq(lessonCommerceOrders.productType, input.productType));
     if (input.studentId) filters.push(eq(lessonCommerceOrders.studentId, input.studentId));
     if (input.search) {
       const search = `%${input.search}%`;
@@ -182,6 +213,7 @@ export class LessonCommerceRepository {
         or(
           ilike(lessonCommerceOrders.orderNo, search),
           ilike(lessonCommerceOrders.packageName, search),
+          ilike(lessonCommerceOrders.periodCardProductName, search),
           ilike(lessonCommerceOrders.studentName, search),
           ilike(lessonCommerceOrders.guardianName, search),
         )!,

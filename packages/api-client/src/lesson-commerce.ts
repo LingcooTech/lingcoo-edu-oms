@@ -23,7 +23,16 @@ function collectionPath(institutionId: string) {
 
 function queryString(input: LessonOrderListQuery) {
   const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(input)) {
+  const queryKeys: Array<keyof LessonOrderListQuery> = [
+    'page',
+    'pageSize',
+    'search',
+    'productType',
+    'status',
+    'studentId',
+  ];
+  for (const key of queryKeys) {
+    const value = input[key];
     if (value !== undefined && value !== '') params.set(key, String(value));
   }
   return params.size ? `?${params.toString()}` : '';

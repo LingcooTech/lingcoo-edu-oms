@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { LessonCommerceService } from '../src/modules/lesson-commerce/application/lesson-commerce.service.js';
 
-function fixture() {
+function fixture(productType: 'lesson_package' | 'period_card' = 'lesson_package') {
   const now = new Date('2026-09-11T08:00:00.000Z');
   const order = {
     id: '11111111-1111-4111-8111-111111111111',
@@ -13,12 +13,25 @@ function fixture() {
     guardianId: '44444444-4444-4444-8444-444444444444',
     guardianName: '小满妈妈',
     createdByUserId: '55555555-5555-4555-8555-555555555555',
-    packageId: '66666666-6666-4666-8666-666666666666',
-    packageVersionId: '77777777-7777-4777-8777-777777777777',
-    packageVersion: 3,
-    packageName: '通用课时 20 节',
-    baseUnits: 20,
-    bonusUnits: 2,
+    productType,
+    packageId: productType === 'lesson_package' ? '66666666-6666-4666-8666-666666666666' : null,
+    packageVersionId:
+      productType === 'lesson_package' ? '77777777-7777-4777-8777-777777777777' : null,
+    packageVersion: productType === 'lesson_package' ? 3 : null,
+    packageName: productType === 'lesson_package' ? '通用课时 20 节' : null,
+    baseUnits: productType === 'lesson_package' ? 20 : null,
+    bonusUnits: productType === 'lesson_package' ? 2 : null,
+    periodCardProductId:
+      productType === 'period_card' ? 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' : null,
+    periodCardProductVersionId:
+      productType === 'period_card' ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' : null,
+    periodCardProductVersion: productType === 'period_card' ? 5 : null,
+    periodCardProductName: productType === 'period_card' ? '月度成长卡' : null,
+    periodCardMode: productType === 'period_card' ? ('limited' as const) : null,
+    periodCardUsageLimit: productType === 'period_card' ? 12 : null,
+    periodCardDurationUnit: productType === 'period_card' ? ('month' as const) : null,
+    periodCardDurationCount: productType === 'period_card' ? 1 : null,
+    periodCardActivationPolicy: productType === 'period_card' ? ('on_first_use' as const) : null,
     channel: 'online' as const,
     listedAmountMinor: 12_800,
     amountMinor: 12_800,
@@ -31,6 +44,7 @@ function fixture() {
     receiptNo: 'RC20260911160000ABCDEF123456',
     paymentIntentId: '88888888-8888-4888-8888-888888888888',
     grantMovementId: null as string | null,
+    periodCardEntitlementId: null as string | null,
     status: 'pending_payment' as
       'pending_payment' | 'paid_pending_grant' | 'completed' | 'grant_failed',
     failureCode: null as string | null,
@@ -51,9 +65,15 @@ function fixture() {
       order.paidAt = paidAt;
       return order;
     }),
-    markCompleted: vi.fn(async (_id: string, movementId: string) => {
+    markLessonCompleted: vi.fn(async (_id: string, movementId: string) => {
       order.status = 'completed';
       order.grantMovementId = movementId;
+      order.completedAt = now;
+      return order;
+    }),
+    markPeriodCardCompleted: vi.fn(async (_id: string, entitlementId: string) => {
+      order.status = 'completed';
+      order.periodCardEntitlementId = entitlementId;
       order.completedAt = now;
       return order;
     }),
@@ -67,8 +87,14 @@ function fixture() {
       },
     })),
   };
+  const periodCardEntitlements = {
+    issueInTransaction: vi.fn(async () => ({
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    })),
+  };
+  const transaction = {} as never;
   const database = {
-    transaction: (work: (transaction: never) => Promise<unknown>) => work({} as never),
+    transaction: (work: (transaction: never) => Promise<unknown>) => work(transaction),
   };
   const audit = { record: vi.fn(async () => undefined) };
   const service = new LessonCommerceService(
@@ -77,6 +103,8 @@ function fixture() {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
+    periodCardEntitlements as never,
     lessons as never,
     {} as never,
     {} as never,
@@ -85,7 +113,7 @@ function fixture() {
     { getValue: vi.fn(async () => true), publicValues: vi.fn(async () => ({})) } as never,
     () => now,
   );
-  return { service, order, repository, lessons };
+  return { service, order, repository, lessons, periodCardEntitlements, transaction };
 }
 
 describe('LessonCommerceService payment facts', () => {
@@ -116,7 +144,53 @@ describe('LessonCommerceService payment facts', () => {
       },
       expect.objectContaining({ actorId: order.createdByUserId }),
     );
-    expect(repository.markCompleted).toHaveBeenCalledTimes(1);
+    expect(repository.markLessonCompleted).toHaveBeenCalledTimes(1);
+    expect(order.status).toBe('completed');
+  });
+
+  it('issues the snapshotted period-card version exactly once for duplicate successful facts', async () => {
+    const { service, order, repository, periodCardEntitlements, transaction } =
+      fixture('period_card');
+    const fact = {
+      intentId: order.paymentIntentId!,
+      merchantReference: order.orderNo,
+      status: 'succeeded' as const,
+      amountMinor: order.amountMinor,
+      refundedAmountMinor: 0,
+      currency: order.currency,
+      occurredAt: new Date('2026-09-11T08:05:00.000Z'),
+    };
+
+    await service.receive(fact);
+    await service.receive(fact);
+
+    expect(periodCardEntitlements.issueInTransaction).toHaveBeenCalledTimes(1);
+    expect(periodCardEntitlements.issueInTransaction).toHaveBeenCalledWith(
+      {
+        institutionId: order.institutionId,
+        studentId: order.studentId,
+        productId: order.periodCardProductId,
+        productVersion: 5,
+        operationId: order.id,
+        activationStartsAt: null,
+        reason: `订单 ${order.orderNo} 自动发放`,
+        sourceType: 'order',
+        sourceReference: order.orderNo,
+      },
+      {
+        actorType: 'user',
+        actorId: order.createdByUserId,
+        actorLabel: null,
+      },
+      transaction,
+    );
+    expect(repository.markPeriodCardCompleted).toHaveBeenCalledTimes(1);
+    expect(repository.markPeriodCardCompleted).toHaveBeenCalledWith(
+      order.id,
+      'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      transaction,
+    );
+    expect(order.periodCardEntitlementId).toBe('cccccccc-cccc-4ccc-8ccc-cccccccccccc');
     expect(order.status).toBe('completed');
   });
 

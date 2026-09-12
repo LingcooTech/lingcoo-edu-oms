@@ -46,10 +46,13 @@ const rosterEntry = {
   attendanceRecordedAt: null,
   attendanceRecordedBy: null,
   consumptionStatus: 'not_consumed',
+  consumptionSource: null,
   plannedUnits: 1,
   consumedUnits: null,
   movementId: null,
   reversalMovementId: null,
+  periodCardEntitlementId: null,
+  periodCardUsageId: null,
   consumptionOperationId: null,
   reversalOperationId: null,
   consumedAt: null,
@@ -216,6 +219,7 @@ describe('P4 lesson sessions api client', () => {
       ...rosterEntry,
       attendanceStatus: 'present',
       consumptionStatus: 'consumed',
+      consumptionSource: 'lesson_units',
       consumedUnits: 1,
       movementId,
       consumptionOperationId: operationId,
@@ -225,6 +229,7 @@ describe('P4 lesson sessions api client', () => {
     const consumeResult = {
       rosterEntry: consumed,
       movementId,
+      periodCardUsageId: null,
       consumedAt: startsAt,
       reversedAt: null,
       errorCode: null,
@@ -251,6 +256,7 @@ describe('P4 lesson sessions api client', () => {
         response({
           rosterEntry: reversed,
           movementId: reversalMovementId,
+          periodCardUsageId: null,
           consumedAt: startsAt,
           reversedAt: endsAt,
           errorCode: null,
@@ -290,12 +296,28 @@ describe('P4 lesson sessions api client', () => {
       expectedRevision: 2,
       units: 1,
       reason: null,
+      consumptionSource: 'lesson_units',
+      periodCardEntitlementId: null,
     });
     expect(requestBody(fetch, 1)).toEqual({
       operationId,
       items: [
-        { rosterEntryId, expectedRevision: 2, units: 1, reason: null },
-        { rosterEntryId: secondRosterEntryId, expectedRevision: 1, units: 2, reason: '补扣' },
+        {
+          rosterEntryId,
+          expectedRevision: 2,
+          units: 1,
+          reason: null,
+          consumptionSource: 'lesson_units',
+          periodCardEntitlementId: null,
+        },
+        {
+          rosterEntryId: secondRosterEntryId,
+          expectedRevision: 1,
+          units: 2,
+          reason: '补扣',
+          consumptionSource: 'lesson_units',
+          periodCardEntitlementId: null,
+        },
       ],
     });
   });

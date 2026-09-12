@@ -19,6 +19,10 @@ import type { IdempotencyService } from '../../idempotency/public.js';
 import type { LessonPurchaseGrantLedger } from '../../lesson-accounts/public.js';
 import type { LessonPackageDirectory } from '../../lesson-products/public.js';
 import type { PaymentFact, PaymentFactReceiver } from '../../payments/public.js';
+import type {
+  PeriodCardEntitlementIssuer,
+  PeriodCardProductDirectory,
+} from '../../period-cards/public.js';
 import type { SettingsReader } from '../../settings/public.js';
 import type {
   LessonCommerceInstitutionDirectory,
@@ -40,6 +44,8 @@ export class LessonCommerceService implements PaymentFactReceiver {
     private readonly institutions: LessonCommerceInstitutionDirectory,
     private readonly people: LessonCommercePeopleDirectory,
     private readonly products: LessonPackageDirectory,
+    private readonly periodCardProducts: PeriodCardProductDirectory,
+    private readonly periodCardEntitlements: PeriodCardEntitlementIssuer,
     private readonly lessons: LessonPurchaseGrantLedger,
     private readonly payments: LessonCommercePayments,
     private readonly payers: WechatMiniPayerDirectory,
@@ -60,6 +66,11 @@ export class LessonCommerceService implements PaymentFactReceiver {
   async listPackages(institutionId: string) {
     if (!(await this.onlineSalesEnabled())) return [];
     return this.products.listPurchasable(institutionId, this.clock());
+  }
+
+  async listPeriodCards(institutionId: string) {
+    if (!(await this.onlineSalesEnabled())) return [];
+    return this.periodCardProducts.listPurchasable(institutionId, this.clock());
   }
 
   onboardStudent(
@@ -104,41 +115,22 @@ export class LessonCommerceService implements PaymentFactReceiver {
           input.studentId,
           transaction,
         );
-        const product = await this.products.getPurchasableVersion(
-          input.institutionId,
-          input.packageId,
-          transaction,
-          this.clock(),
-        );
-        const order = await this.repository.create(
-          {
-            orderNo: this.orderNo(),
-            institutionId: input.institutionId,
-            studentId: input.studentId,
-            studentName: owner.student.fullName,
-            guardianId: owner.guardianId,
-            guardianName: owner.guardianName,
-            createdByUserId: identityUserId,
-            packageId: product.packageId,
-            packageVersionId: product.id,
-            packageVersion: product.version,
-            packageName: product.name,
-            baseUnits: product.baseUnits,
-            bonusUnits: product.bonusUnits,
-            channel: 'online',
-            listedAmountMinor: product.priceAmount,
-            amountMinor: product.priceAmount,
-            currency: product.currency,
-            provider,
-            paymentMethod: provider === 'wechat_pay' ? 'wechat_pay' : 'mock',
-            paymentReference: null,
-            paymentNote: null,
-            priceAdjustmentReason: null,
-            receiptNo: this.receiptNo(),
-            expiresAt: new Date(this.clock().getTime() + 30 * 60_000),
-          },
-          transaction,
-        );
+        const order =
+          input.productType === 'period_card'
+            ? await this.createOnlinePeriodCardOrder(
+                input,
+                owner,
+                identityUserId,
+                provider,
+                transaction,
+              )
+            : await this.createOnlineLessonPackageOrder(
+                input,
+                owner,
+                identityUserId,
+                provider,
+                transaction,
+              );
         await this.audit.record(
           {
             ...context,
@@ -154,8 +146,9 @@ export class LessonCommerceService implements PaymentFactReceiver {
               orderNo: order.orderNo,
               institutionId: order.institutionId,
               studentId: order.studentId,
-              packageId: order.packageId,
-              packageVersion: order.packageVersion,
+              productType: order.productType,
+              productId: order.packageId ?? order.periodCardProductId,
+              productVersion: order.packageVersion ?? order.periodCardProductVersion,
               currency: order.currency,
             },
           },
@@ -256,50 +249,25 @@ export class LessonCommerceService implements PaymentFactReceiver {
           student = existing.student;
           guardian = existing.guardian;
         }
-        const product = await this.products.getActiveVersion(
-          institutionId,
-          input.packageId,
-          transaction,
-        );
-        if (input.paidAmountMinor !== product.priceAmount && !input.priceAdjustmentReason?.trim()) {
-          throw new ApiError(
-            400,
-            'OFFLINE_ORDER_PRICE_ADJUSTMENT_REASON_REQUIRED',
-            '实收金额与课时包标价不一致时必须填写调价原因',
-          );
-        }
         const now = this.clock();
-        const order = await this.repository.create(
-          {
-            orderNo: this.orderNo(),
-            institutionId,
-            studentId: student.id,
-            studentName: student.fullName,
-            guardianId: guardian.id,
-            guardianName: guardian.fullName,
-            createdByUserId: context.actorId,
-            packageId: product.packageId,
-            packageVersionId: product.id,
-            packageVersion: product.version,
-            packageName: product.name,
-            baseUnits: product.baseUnits,
-            bonusUnits: product.bonusUnits,
-            channel: 'offline',
-            listedAmountMinor: product.priceAmount,
-            amountMinor: input.paidAmountMinor,
-            currency: product.currency,
-            provider: null,
-            paymentMethod: input.paymentMethod,
-            paymentReference: input.paymentReference ?? null,
-            paymentNote: input.paymentNote ?? null,
-            priceAdjustmentReason: input.priceAdjustmentReason ?? null,
-            receiptNo: this.receiptNo(),
-            status: 'paid_pending_grant',
-            paidAt: new Date(input.receivedAt),
-            expiresAt: null,
-          },
-          transaction,
-        );
+        const order =
+          input.productType === 'period_card'
+            ? await this.createOfflinePeriodCardOrder(
+                institutionId,
+                input,
+                student,
+                guardian,
+                context.actorId,
+                transaction,
+              )
+            : await this.createOfflineLessonPackageOrder(
+                institutionId,
+                input,
+                student,
+                guardian,
+                context.actorId,
+                transaction,
+              );
         await this.audit.record(
           {
             ...context,
@@ -315,7 +283,8 @@ export class LessonCommerceService implements PaymentFactReceiver {
               orderNo: order.orderNo,
               institutionId,
               studentId: order.studentId,
-              packageVersion: order.packageVersion,
+              productType: order.productType,
+              productVersion: order.packageVersion ?? order.periodCardProductVersion,
               paymentMethod: order.paymentMethod,
               recordedAt: now.toISOString(),
             },
@@ -455,6 +424,238 @@ export class LessonCommerceService implements PaymentFactReceiver {
     }
   }
 
+  private async createOfflineLessonPackageOrder(
+    institutionId: string,
+    input: {
+      packageId: string;
+      paidAmountMinor: number;
+      paymentMethod: 'cash' | 'bank_transfer' | 'wechat_transfer' | 'other';
+      receivedAt: string;
+      paymentReference?: string | null;
+      paymentNote?: string | null;
+      priceAdjustmentReason?: string | null;
+    },
+    student: { id: string; fullName: string },
+    guardian: { id: string; fullName: string },
+    actorId: string,
+    transaction: DatabaseTransaction,
+  ) {
+    const product = await this.products.getActiveVersion(
+      institutionId,
+      input.packageId,
+      transaction,
+    );
+    this.assertOfflinePrice(
+      input.paidAmountMinor,
+      product.priceAmount,
+      input.priceAdjustmentReason,
+    );
+    return this.repository.create(
+      {
+        ...this.offlineOrderBase(institutionId, input, student, guardian, actorId),
+        productType: 'lesson_package',
+        packageId: product.packageId,
+        packageVersionId: product.id,
+        packageVersion: product.version,
+        packageName: product.name,
+        baseUnits: product.baseUnits,
+        bonusUnits: product.bonusUnits,
+        listedAmountMinor: product.priceAmount,
+        currency: product.currency,
+      },
+      transaction,
+    );
+  }
+
+  private async createOfflinePeriodCardOrder(
+    institutionId: string,
+    input: {
+      periodCardProductId: string;
+      paidAmountMinor: number;
+      paymentMethod: 'cash' | 'bank_transfer' | 'wechat_transfer' | 'other';
+      receivedAt: string;
+      paymentReference?: string | null;
+      paymentNote?: string | null;
+      priceAdjustmentReason?: string | null;
+    },
+    student: { id: string; fullName: string },
+    guardian: { id: string; fullName: string },
+    actorId: string,
+    transaction: DatabaseTransaction,
+  ) {
+    const product = await this.periodCardProducts.getActiveVersion(
+      institutionId,
+      input.periodCardProductId,
+      transaction,
+    );
+    this.assertOfflinePrice(
+      input.paidAmountMinor,
+      product.priceAmount,
+      input.priceAdjustmentReason,
+    );
+    return this.repository.create(
+      {
+        ...this.offlineOrderBase(institutionId, input, student, guardian, actorId),
+        productType: 'period_card',
+        periodCardProductId: product.productId,
+        periodCardProductVersionId: product.id,
+        periodCardProductVersion: product.version,
+        periodCardProductName: product.name,
+        periodCardMode: product.mode,
+        periodCardUsageLimit: product.usageLimit,
+        periodCardDurationUnit: product.durationUnit,
+        periodCardDurationCount: product.durationCount,
+        periodCardActivationPolicy: product.activationPolicy,
+        listedAmountMinor: product.priceAmount,
+        currency: product.currency,
+      },
+      transaction,
+    );
+  }
+
+  private offlineOrderBase(
+    institutionId: string,
+    input: {
+      paidAmountMinor: number;
+      paymentMethod: 'cash' | 'bank_transfer' | 'wechat_transfer' | 'other';
+      receivedAt: string;
+      paymentReference?: string | null;
+      paymentNote?: string | null;
+      priceAdjustmentReason?: string | null;
+    },
+    student: { id: string; fullName: string },
+    guardian: { id: string; fullName: string },
+    actorId: string,
+  ) {
+    return {
+      orderNo: this.orderNo(),
+      institutionId,
+      studentId: student.id,
+      studentName: student.fullName,
+      guardianId: guardian.id,
+      guardianName: guardian.fullName,
+      createdByUserId: actorId,
+      channel: 'offline' as const,
+      amountMinor: input.paidAmountMinor,
+      provider: null,
+      paymentMethod: input.paymentMethod,
+      paymentReference: input.paymentReference ?? null,
+      paymentNote: input.paymentNote ?? null,
+      priceAdjustmentReason: input.priceAdjustmentReason ?? null,
+      receiptNo: this.receiptNo(),
+      status: 'paid_pending_grant' as const,
+      paidAt: new Date(input.receivedAt),
+      expiresAt: null,
+    };
+  }
+
+  private assertOfflinePrice(
+    paidAmountMinor: number,
+    listedAmountMinor: number,
+    priceAdjustmentReason?: string | null,
+  ) {
+    if (paidAmountMinor !== listedAmountMinor && !priceAdjustmentReason?.trim()) {
+      throw new ApiError(
+        400,
+        'OFFLINE_ORDER_PRICE_ADJUSTMENT_REASON_REQUIRED',
+        '实收金额与商品标价不一致时必须填写调价原因',
+      );
+    }
+  }
+
+  private async createOnlineLessonPackageOrder(
+    input: { institutionId: string; studentId: string; packageId: string },
+    owner: { guardianId: string; guardianName: string; student: { fullName: string } },
+    identityUserId: string,
+    provider: PaymentProvider,
+    transaction: DatabaseTransaction,
+  ) {
+    const product = await this.products.getPurchasableVersion(
+      input.institutionId,
+      input.packageId,
+      transaction,
+      this.clock(),
+    );
+    return this.repository.create(
+      {
+        orderNo: this.orderNo(),
+        institutionId: input.institutionId,
+        studentId: input.studentId,
+        studentName: owner.student.fullName,
+        guardianId: owner.guardianId,
+        guardianName: owner.guardianName,
+        createdByUserId: identityUserId,
+        productType: 'lesson_package',
+        packageId: product.packageId,
+        packageVersionId: product.id,
+        packageVersion: product.version,
+        packageName: product.name,
+        baseUnits: product.baseUnits,
+        bonusUnits: product.bonusUnits,
+        channel: 'online',
+        listedAmountMinor: product.priceAmount,
+        amountMinor: product.priceAmount,
+        currency: product.currency,
+        provider,
+        paymentMethod: provider === 'wechat_pay' ? 'wechat_pay' : 'mock',
+        paymentReference: null,
+        paymentNote: null,
+        priceAdjustmentReason: null,
+        receiptNo: this.receiptNo(),
+        expiresAt: new Date(this.clock().getTime() + 30 * 60_000),
+      },
+      transaction,
+    );
+  }
+
+  private async createOnlinePeriodCardOrder(
+    input: { institutionId: string; studentId: string; periodCardProductId: string },
+    owner: { guardianId: string; guardianName: string; student: { fullName: string } },
+    identityUserId: string,
+    provider: PaymentProvider,
+    transaction: DatabaseTransaction,
+  ) {
+    const product = await this.periodCardProducts.getPurchasableVersion(
+      input.institutionId,
+      input.periodCardProductId,
+      transaction,
+      this.clock(),
+    );
+    return this.repository.create(
+      {
+        orderNo: this.orderNo(),
+        institutionId: input.institutionId,
+        studentId: input.studentId,
+        studentName: owner.student.fullName,
+        guardianId: owner.guardianId,
+        guardianName: owner.guardianName,
+        createdByUserId: identityUserId,
+        productType: 'period_card',
+        periodCardProductId: product.productId,
+        periodCardProductVersionId: product.id,
+        periodCardProductVersion: product.version,
+        periodCardProductName: product.name,
+        periodCardMode: product.mode,
+        periodCardUsageLimit: product.usageLimit,
+        periodCardDurationUnit: product.durationUnit,
+        periodCardDurationCount: product.durationCount,
+        periodCardActivationPolicy: product.activationPolicy,
+        channel: 'online',
+        listedAmountMinor: product.priceAmount,
+        amountMinor: product.priceAmount,
+        currency: product.currency,
+        provider,
+        paymentMethod: provider === 'wechat_pay' ? 'wechat_pay' : 'mock',
+        paymentReference: null,
+        paymentNote: null,
+        priceAdjustmentReason: null,
+        receiptNo: this.receiptNo(),
+        expiresAt: new Date(this.clock().getTime() + 30 * 60_000),
+      },
+      transaction,
+    );
+  }
+
   private async ensurePaymentIntent(
     order: LessonCommerceOrderRecord,
     provider: PaymentProvider,
@@ -472,7 +673,7 @@ export class LessonCommerceService implements PaymentFactReceiver {
         provider,
         amountMinor: order.amountMinor,
         currency: order.currency,
-        description: `${order.packageName}（${order.baseUnits + order.bonusUnits}课时）`,
+        description: this.paymentDescription(order),
       },
       context,
       { payerOpenId },
@@ -491,45 +692,11 @@ export class LessonCommerceService implements PaymentFactReceiver {
 
   private async grant(order: LessonCommerceOrderRecord, context: ActorContext) {
     try {
-      const result = await this.lessons.grantPurchase(
-        {
-          institutionId: order.institutionId,
-          studentId: order.studentId,
-          packageId: order.packageId,
-          packageVersion: order.packageVersion,
-          orderNo: order.orderNo,
-          source: order.channel === 'online' ? 'online_purchase' : 'offline_purchase',
-        },
-        context,
-      );
-      await this.database.transaction(async (transaction) => {
-        const locked = await this.repository.lockById(order.id, transaction);
-        if (!locked || locked.status === 'completed') return;
-        const completed = await this.repository.markCompleted(
-          locked.id,
-          result.movement.id,
-          transaction,
-        );
-        if (!completed) {
-          throw new ApiError(409, 'LESSON_ORDER_VERSION_CONFLICT', '订单完成状态更新冲突');
-        }
-        await this.audit.record(
-          {
-            ...context,
-            category: 'business',
-            action: 'lesson-order.completed',
-            resourceType: 'lesson.order',
-            resourceId: locked.id,
-            changes: [{ field: 'status', before: locked.status, after: completed.status }],
-            metadata: {
-              orderNo: locked.orderNo,
-              grantMovementId: result.movement.id,
-              grantedUnits: result.movement.units,
-            },
-          },
-          transaction,
-        );
-      });
+      if (order.productType === 'period_card') {
+        await this.grantPeriodCard(order, context);
+      } else {
+        await this.grantLessonPackage(order, context);
+      }
     } catch (error) {
       const failure = this.failure(error);
       await this.database.transaction(async (transaction) => {
@@ -556,6 +723,117 @@ export class LessonCommerceService implements PaymentFactReceiver {
       });
       throw error;
     }
+  }
+
+  private async grantLessonPackage(order: LessonCommerceOrderRecord, context: ActorContext) {
+    if (!order.packageId || !order.packageVersion) {
+      throw new ApiError(500, 'LESSON_ORDER_SNAPSHOT_INVALID', '课时包订单快照不完整');
+    }
+    const result = await this.lessons.grantPurchase(
+      {
+        institutionId: order.institutionId,
+        studentId: order.studentId,
+        packageId: order.packageId,
+        packageVersion: order.packageVersion,
+        orderNo: order.orderNo,
+        source: order.channel === 'online' ? 'online_purchase' : 'offline_purchase',
+      },
+      context,
+    );
+    await this.database.transaction(async (transaction) => {
+      const locked = await this.repository.lockById(order.id, transaction);
+      if (!locked || locked.status === 'completed') return;
+      const completed = await this.repository.markLessonCompleted(
+        locked.id,
+        result.movement.id,
+        transaction,
+      );
+      if (!completed) {
+        throw new ApiError(409, 'LESSON_ORDER_VERSION_CONFLICT', '订单完成状态更新冲突');
+      }
+      await this.audit.record(
+        {
+          ...context,
+          category: 'business',
+          action: 'lesson-order.completed',
+          resourceType: 'lesson.order',
+          resourceId: locked.id,
+          changes: [{ field: 'status', before: locked.status, after: completed.status }],
+          metadata: {
+            orderNo: locked.orderNo,
+            productType: locked.productType,
+            grantMovementId: result.movement.id,
+            grantedUnits: result.movement.units,
+          },
+        },
+        transaction,
+      );
+    });
+  }
+
+  private async grantPeriodCard(order: LessonCommerceOrderRecord, context: ActorContext) {
+    if (!order.periodCardProductId || !order.periodCardProductVersion) {
+      throw new ApiError(500, 'PERIOD_CARD_ORDER_SNAPSHOT_INVALID', '周期卡订单快照不完整');
+    }
+    await this.database.transaction(async (transaction) => {
+      const locked = await this.repository.lockById(order.id, transaction);
+      if (!locked || locked.status === 'completed') return;
+      const entitlement = await this.periodCardEntitlements.issueInTransaction(
+        {
+          institutionId: locked.institutionId,
+          studentId: locked.studentId,
+          productId: order.periodCardProductId!,
+          productVersion: order.periodCardProductVersion!,
+          operationId: locked.id,
+          activationStartsAt: null,
+          reason: `订单 ${locked.orderNo} 自动发放`,
+          sourceType: 'order',
+          sourceReference: locked.orderNo,
+        },
+        context,
+        transaction,
+      );
+      const completed = await this.repository.markPeriodCardCompleted(
+        locked.id,
+        entitlement.id,
+        transaction,
+      );
+      if (!completed) {
+        throw new ApiError(409, 'LESSON_ORDER_VERSION_CONFLICT', '订单完成状态更新冲突');
+      }
+      await this.audit.record(
+        {
+          ...context,
+          category: 'business',
+          action: 'lesson-order.completed',
+          resourceType: 'lesson.order',
+          resourceId: locked.id,
+          changes: [{ field: 'status', before: locked.status, after: completed.status }],
+          metadata: {
+            orderNo: locked.orderNo,
+            productType: locked.productType,
+            periodCardEntitlementId: entitlement.id,
+          },
+        },
+        transaction,
+      );
+    });
+  }
+
+  private paymentDescription(order: LessonCommerceOrderRecord) {
+    if (order.productType === 'period_card') {
+      const duration = `${order.periodCardDurationCount}${
+        order.periodCardDurationUnit === 'day'
+          ? '天'
+          : order.periodCardDurationUnit === 'week'
+            ? '周'
+            : '个月'
+      }`;
+      const usage =
+        order.periodCardMode === 'unlimited' ? '不限次' : `${order.periodCardUsageLimit}次`;
+      return `${order.periodCardProductName}（${duration}，${usage}）`;
+    }
+    return `${order.packageName}（${(order.baseUnits ?? 0) + (order.bonusUnits ?? 0)}课时）`;
   }
 
   private async closeFromPayment(order: LessonCommerceOrderRecord, fact: PaymentFact) {
@@ -629,7 +907,7 @@ export class LessonCommerceService implements PaymentFactReceiver {
   }
 
   private view(record: LessonCommerceOrderRecord): LessonOrder {
-    return {
+    const common = {
       id: record.id,
       orderNo: record.orderNo,
       institutionId: record.institutionId,
@@ -637,12 +915,6 @@ export class LessonCommerceService implements PaymentFactReceiver {
       studentName: record.studentName,
       guardianId: record.guardianId,
       guardianName: record.guardianName,
-      packageId: record.packageId,
-      packageVersionId: record.packageVersionId,
-      packageVersion: record.packageVersion,
-      packageName: record.packageName,
-      baseUnits: record.baseUnits,
-      bonusUnits: record.bonusUnits,
       channel: record.channel,
       listedAmountMinor: record.listedAmountMinor,
       amountMinor: record.amountMinor,
@@ -654,7 +926,6 @@ export class LessonCommerceService implements PaymentFactReceiver {
       priceAdjustmentReason: record.priceAdjustmentReason,
       receiptNo: record.receiptNo,
       paymentIntentId: record.paymentIntentId,
-      grantMovementId: record.grantMovementId,
       status: record.status,
       failureCode: record.failureCode,
       failureMessage: record.failureMessage,
@@ -665,6 +936,72 @@ export class LessonCommerceService implements PaymentFactReceiver {
       revision: record.revision,
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
+    };
+    if (record.productType === 'period_card') {
+      if (
+        !record.periodCardProductId ||
+        !record.periodCardProductVersionId ||
+        !record.periodCardProductVersion ||
+        !record.periodCardProductName ||
+        !record.periodCardMode ||
+        !record.periodCardDurationUnit ||
+        !record.periodCardDurationCount ||
+        !record.periodCardActivationPolicy
+      ) {
+        throw new ApiError(500, 'PERIOD_CARD_ORDER_SNAPSHOT_INVALID', '周期卡订单快照不完整');
+      }
+      return {
+        ...common,
+        productType: 'period_card',
+        packageId: null,
+        packageVersionId: null,
+        packageVersion: null,
+        packageName: null,
+        baseUnits: null,
+        bonusUnits: null,
+        periodCardProductId: record.periodCardProductId,
+        periodCardProductVersionId: record.periodCardProductVersionId,
+        periodCardProductVersion: record.periodCardProductVersion,
+        periodCardProductName: record.periodCardProductName,
+        periodCardMode: record.periodCardMode,
+        periodCardUsageLimit: record.periodCardUsageLimit,
+        periodCardDurationUnit: record.periodCardDurationUnit,
+        periodCardDurationCount: record.periodCardDurationCount,
+        periodCardActivationPolicy: record.periodCardActivationPolicy,
+        grantMovementId: null,
+        periodCardEntitlementId: record.periodCardEntitlementId,
+      };
+    }
+    if (
+      !record.packageId ||
+      !record.packageVersionId ||
+      !record.packageVersion ||
+      !record.packageName ||
+      !record.baseUnits ||
+      record.bonusUnits === null
+    ) {
+      throw new ApiError(500, 'LESSON_ORDER_SNAPSHOT_INVALID', '课时包订单快照不完整');
+    }
+    return {
+      ...common,
+      productType: 'lesson_package',
+      packageId: record.packageId,
+      packageVersionId: record.packageVersionId,
+      packageVersion: record.packageVersion,
+      packageName: record.packageName,
+      baseUnits: record.baseUnits,
+      bonusUnits: record.bonusUnits,
+      periodCardProductId: null,
+      periodCardProductVersionId: null,
+      periodCardProductVersion: null,
+      periodCardProductName: null,
+      periodCardMode: null,
+      periodCardUsageLimit: null,
+      periodCardDurationUnit: null,
+      periodCardDurationCount: null,
+      periodCardActivationPolicy: null,
+      grantMovementId: record.grantMovementId,
+      periodCardEntitlementId: null,
     };
   }
 
@@ -731,7 +1068,10 @@ export class LessonCommerceService implements PaymentFactReceiver {
     if (error instanceof ApiError) {
       return { code: error.code, message: error.message };
     }
-    return { code: 'LESSON_GRANT_FAILED', message: '支付成功，课时发放失败，系统将自动重试' };
+    return {
+      code: 'ORDER_FULFILLMENT_FAILED',
+      message: '支付成功，商品权益发放失败，系统将自动重试',
+    };
   }
 }
 

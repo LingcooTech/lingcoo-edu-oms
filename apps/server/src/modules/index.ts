@@ -225,11 +225,20 @@ export async function registerApplicationModules(
     audit,
     outbox: outbox.service,
   });
+  const periodCards = createPeriodCardsService({
+    database: dependencies.database,
+    institutions: organization,
+    students: people,
+    idempotency,
+    audit,
+  });
   const lessonCommerce = createLessonCommerceService({
     database: dependencies.database,
     institutions: organization,
     people,
     products: lessonProducts,
+    periodCardProducts: periodCards,
+    periodCardEntitlements: periodCards,
     lessons: lessonAccounts,
     payments,
     payers: wechatMiniAuth,
@@ -238,13 +247,6 @@ export async function registerApplicationModules(
     settings: settings.service,
   });
   lessonCommerceRef.current = lessonCommerce;
-  const periodCards = createPeriodCardsService({
-    database: dependencies.database,
-    institutions: organization,
-    students: people,
-    idempotency,
-    audit,
-  });
   const lessonSessions = createLessonSessionsService({
     database: dependencies.database,
     institutions: organization,
@@ -351,6 +353,8 @@ export async function registerApplicationModules(
       institutions: organization,
       people,
       products: lessonProducts,
+      periodCardProducts: periodCards,
+      periodCardEntitlements: periodCards,
       lessons: lessonAccounts,
       payments,
       payers: wechatMiniAuth,
