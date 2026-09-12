@@ -16,10 +16,12 @@ import type {
   LessonSession,
   LessonSessionAttendanceStatus,
   LessonSessionConsumptionStatus,
+  LessonSessionConsumptionSource,
   LessonSessionRosterEntry,
   LessonSessionSource,
   LessonSessionStatus,
   LessonSessionTeacherAssignment,
+  PeriodCardEntitlement,
   ReplaceLessonSessionTeachersRequest,
   UpdateLessonSessionRequest,
 } from '@lingcoo-edu-oms/contracts';
@@ -57,6 +59,8 @@ import {
   useCancelLessonSession,
   useCompleteLessonSession,
   useConsumeLessonSessionStudent,
+  useConsumeLessonSessionStudents,
+  useActivePeriodCardEntitlements,
   useCreateLessonSession,
   useLessonSession,
   useLessonSessionRoster,
@@ -81,7 +85,13 @@ type SessionFormValues = {
 };
 
 type ReasonFormValues = { reason: string };
-type ConsumeFormValues = { units: number; reason?: string };
+type ConsumeFormValues = {
+  units: number;
+  reason?: string;
+  consumptionSource: LessonSessionConsumptionSource;
+  periodCardEntitlementId?: string | null;
+};
+type BulkConsumeFormValues = { reason?: string };
 type AddStudentsFormValues = { studentIds: string[] };
 type TeacherAssignmentFormValues = {
   instructorIds: string[];
@@ -167,6 +177,16 @@ function displayDateTime(value: string): string {
   }).format(new Date(value));
 }
 
+function displayDate(value: string | null, emptyLabel = '—'): string {
+  return value
+    ? new Intl.DateTimeFormat('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date(value))
+    : emptyLabel;
+}
+
 function newOperationId(): string {
   return crypto.randomUUID();
 }
@@ -194,6 +214,8 @@ export function LessonSessionsPage({ mode = 'sessions' }: { mode?: PageMode }) {
   const [addStudentsOpen, setAddStudentsOpen] = useState(false);
   const [cancelSession, setCancelSession] = useState<LessonSession | null>(null);
   const [consumeEntry, setConsumeEntry] = useState<LessonSessionRosterEntry | null>(null);
+  const [bulkConsumeOpen, setBulkConsumeOpen] = useState(false);
+  const [selectedRosterEntryIds, setSelectedRosterEntryIds] = useState<string[]>([]);
   const [reverseEntry, setReverseEntry] = useState<LessonSessionRosterEntry | null>(null);
   const [teacherModalOpen, setTeacherModalOpen] = useState(false);
   const [attendanceUpdatingId, setAttendanceUpdatingId] = useState<string | null>(null);
@@ -229,6 +251,7 @@ export function LessonSessionsPage({ mode = 'sessions' }: { mode?: PageMode }) {
   const addStudents = useAddLessonSessionStudents();
   const recordAttendance = useRecordLessonSessionAttendance();
   const consumeStudent = useConsumeLessonSessionStudent();
+  const consumeStudents = useConsumeLessonSessionStudents();
   const reverseConsumption = useReverseLessonSessionConsumption();
   const replaceTeachers = useReplaceLessonSessionTeachers();
 
@@ -285,6 +308,22 @@ export function LessonSessionsPage({ mode = 'sessions' }: { mode?: PageMode }) {
         label: [student.fullName, student.preferredName, student.grade].filter(Boolean).join(' · '),
       }));
   }, [rosterItems, students.data?.items]);
+
+  const bulkConsumableEntries = useMemo(
+    () =>
+      rosterItems.filter(
+        (entry) =>
+          ['present', 'late'].includes(entry.attendanceStatus) &&
+          ['not_consumed', 'failed', 'reversed'].includes(entry.consumptionStatus),
+      ),
+    [rosterItems],
+  );
+
+  useEffect(() => {
+    setSelectedRosterEntryIds((selected) =>
+      selected.filter((id) => bulkConsumableEntries.some((entry) => entry.id === id)),
+    );
+  }, [bulkConsumableEntries]);
 
   const handleLifecycle = async (
     action: 'open' | 'complete',
@@ -632,6 +671,26 @@ export function LessonSessionsPage({ mode = 'sessions' }: { mode?: PageMode }) {
                 </Row>
               </div>
 
+              {mode === 'attendance' && canManageConsumption && (
+                <Alert
+                  type="info"
+                  showIcon
+                  message="批量消课仅支持普通课时"
+                  description="批量操作不会自动选择周期卡。需要使用周期卡时，请在对应学员行点击“消课”，逐人选择有效周期权益。"
+                  action={
+                    <Button
+                      size="small"
+                      type="primary"
+                      disabled={selectedRosterEntryIds.length === 0}
+                      onClick={() => setBulkConsumeOpen(true)}
+                    >
+                      批量消课（普通课时）
+                    </Button>
+                  }
+                  style={{ margin: '0 20px 16px' }}
+                />
+              )}
+
               {!canReadAttendance ? (
                 <Alert
                   type="info"
@@ -648,6 +707,17 @@ export function LessonSessionsPage({ mode = 'sessions' }: { mode?: PageMode }) {
                     pagination={false}
                     locale={{ emptyText: '暂无学员，请先添加学员到本课次' }}
                     scroll={{ x: 900 }}
+                    rowSelection={
+                      mode === 'attendance' && canManageConsumption
+                        ? {
+                            selectedRowKeys: selectedRosterEntryIds,
+                            onChange: (keys) => setSelectedRosterEntryIds(keys as string[]),
+                            getCheckboxProps: (entry) => ({
+                              disabled: !bulkConsumableEntries.some((item) => item.id === entry.id),
+                            }),
+                          }
+                        : undefined
+                    }
                     columns={[
                       {
                         title: '学员',
@@ -703,6 +773,24 @@ export function LessonSessionsPage({ mode = 'sessions' }: { mode?: PageMode }) {
                             {consumptionPresentation[value].label}
                           </Tag>
                         ),
+                      },
+                      {
+                        title: '消费凭据',
+                        width: 190,
+                        render: (_, entry) =>
+                          entry.consumptionSource === 'period_card' ? (
+                            <Space size={6}>
+                              <Tag color="purple">周期卡</Tag>
+                              <Typography.Text type="secondary">周期权益</Typography.Text>
+                            </Space>
+                          ) : (
+                            <Space size={6}>
+                              <Tag color={entry.consumptionSource ? 'cyan' : 'default'}>
+                                普通课时
+                              </Tag>
+                              <Typography.Text type="secondary">课时账户</Typography.Text>
+                            </Space>
+                          ),
                       },
                       {
                         title: '课时数',
@@ -934,6 +1022,11 @@ export function LessonSessionsPage({ mode = 'sessions' }: { mode?: PageMode }) {
                 expectedRevision: consumeEntry.revision,
                 units: values.units,
                 reason: nullable(values.reason),
+                consumptionSource: values.consumptionSource,
+                periodCardEntitlementId:
+                  values.consumptionSource === 'period_card'
+                    ? (values.periodCardEntitlementId ?? null)
+                    : null,
               },
             });
             if (result.errorMessage) {
@@ -944,6 +1037,46 @@ export function LessonSessionsPage({ mode = 'sessions' }: { mode?: PageMode }) {
               );
             }
             setConsumeEntry(null);
+          } catch (error) {
+            void message.error(errorMessage(error));
+          }
+        }}
+      />
+
+      <BulkConsumeModal
+        open={bulkConsumeOpen}
+        entries={bulkConsumableEntries.filter((entry) => selectedRosterEntryIds.includes(entry.id))}
+        loading={consumeStudents.isPending}
+        onClose={() => setBulkConsumeOpen(false)}
+        onSubmit={async (values) => {
+          if (!selectedSession) return;
+          try {
+            const result = await consumeStudents.mutateAsync({
+              institutionId: selectedSession.institutionId,
+              sessionId: selectedSession.id,
+              input: {
+                operationId: newOperationId(),
+                items: selectedRosterEntryIds
+                  .map((id) => bulkConsumableEntries.find((entry) => entry.id === id))
+                  .filter((entry): entry is LessonSessionRosterEntry => Boolean(entry))
+                  .map((entry) => ({
+                    rosterEntryId: entry.id,
+                    expectedRevision: entry.revision,
+                    units: entry.plannedUnits,
+                    reason: nullable(values.reason),
+                    consumptionSource: 'lesson_units' as const,
+                    periodCardEntitlementId: null,
+                  })),
+              },
+            });
+            const failedCount = result.items.filter((item) => item.errorMessage).length;
+            if (failedCount) {
+              void message.warning(`批量消课完成，${failedCount} 人失败，请查看名单结果`);
+            } else {
+              void message.success(`已为 ${result.items.length} 人消费普通课时`);
+            }
+            setSelectedRosterEntryIds([]);
+            setBulkConsumeOpen(false);
           } catch (error) {
             void message.error(errorMessage(error));
           }
@@ -1278,9 +1411,41 @@ function ConsumeModal({
   onSubmit(values: ConsumeFormValues): Promise<void>;
 }) {
   const [form] = Form.useForm<ConsumeFormValues>();
+  const consumptionSource = Form.useWatch('consumptionSource', form) ?? 'lesson_units';
+  const entitlements = useActivePeriodCardEntitlements(
+    entry?.institutionId ?? null,
+    entry?.studentId ?? null,
+    open,
+  );
+  const entitlementItems = entitlements.data?.items ?? [];
+
   useEffect(() => {
-    if (open && entry) form.setFieldsValue({ units: entry.plannedUnits, reason: undefined });
+    if (open && entry) {
+      form.setFieldsValue({
+        units: entry.plannedUnits,
+        reason: undefined,
+        consumptionSource: 'lesson_units',
+        periodCardEntitlementId: null,
+      });
+    }
   }, [entry, form, open]);
+
+  const entitlementLabel = (entitlement: PeriodCardEntitlement) => {
+    const validity = `${displayDate(entitlement.activationStartsAt, '首次使用生效')} — ${displayDate(entitlement.endsAt, '无结束时间')}`;
+    const remaining =
+      entitlement.remainingQuantity === null
+        ? '不限次'
+        : `剩余 ${entitlement.remainingQuantity} 次`;
+    return (
+      <Space direction="vertical" size={0}>
+        <Typography.Text strong>{entitlement.productName}</Typography.Text>
+        <Typography.Text type="secondary">
+          {validity} · {remaining}
+        </Typography.Text>
+      </Space>
+    );
+  };
+
   return (
     <Modal
       open={open}
@@ -1295,6 +1460,59 @@ function ConsumeModal({
       onOk={() => form.submit()}
     >
       <Form name="lesson-consume" form={form} layout="vertical" onFinish={onSubmit}>
+        <Form.Item
+          label="消费凭据"
+          name="consumptionSource"
+          rules={[{ required: true, message: '请选择消费凭据' }]}
+        >
+          <Select
+            options={[
+              { value: 'lesson_units', label: '普通课时 · 课时账户' },
+              { value: 'period_card', label: '周期卡 · 周期权益' },
+            ]}
+            onChange={(value: LessonSessionConsumptionSource) => {
+              if (value === 'lesson_units') form.setFieldValue('periodCardEntitlementId', null);
+            }}
+          />
+        </Form.Item>
+        {consumptionSource === 'period_card' && (
+          <>
+            {entitlements.isPending ? (
+              <Alert type="info" showIcon message="正在加载当前学员的有效周期卡…" />
+            ) : entitlements.isError ? (
+              <Alert
+                type="error"
+                showIcon
+                message="有效周期卡加载失败"
+                description={errorMessage(entitlements.error)}
+              />
+            ) : entitlementItems.length === 0 ? (
+              <Alert
+                type="warning"
+                showIcon
+                message="当前学员没有可用的有效周期卡"
+                description="请改用普通课时，或先为该学员发放处于有效期内的周期卡权益。"
+              />
+            ) : (
+              <Form.Item
+                label="选择周期权益"
+                name="periodCardEntitlementId"
+                rules={[{ required: true, message: '请选择一个周期权益' }]}
+              >
+                <Select
+                  showSearch
+                  optionFilterProp="title"
+                  placeholder="请选择本次要使用的周期权益"
+                  options={entitlementItems.map((entitlement) => ({
+                    value: entitlement.id,
+                    label: entitlementLabel(entitlement),
+                    title: `${entitlement.productName} · ${displayDate(entitlement.activationStartsAt)} — ${displayDate(entitlement.endsAt)}`,
+                  }))}
+                />
+              </Form.Item>
+            )}
+          </>
+        )}
         <Form.Item label="消费课时" name="units" rules={[{ required: true }]}>
           <InputNumber min={1} precision={0} style={{ width: '100%' }} addonAfter="课时" />
         </Form.Item>
@@ -1302,6 +1520,56 @@ function ConsumeModal({
           <Input.TextArea maxLength={500} rows={3} placeholder="可选，例如：本次到课消费" />
         </Form.Item>
         <Alert type="warning" showIcon message="确认后将从该学员在当前机构的可用课时中扣减" />
+      </Form>
+    </Modal>
+  );
+}
+
+function BulkConsumeModal({
+  open,
+  entries,
+  loading,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  entries: LessonSessionRosterEntry[];
+  loading: boolean;
+  onClose(): void;
+  onSubmit(values: BulkConsumeFormValues): Promise<void>;
+}) {
+  const [form] = Form.useForm<BulkConsumeFormValues>();
+
+  useEffect(() => {
+    if (open) form.resetFields();
+  }, [form, open]);
+
+  return (
+    <Modal
+      open={open}
+      destroyOnHidden
+      width={520}
+      title={`批量消课 · ${entries.length} 位学员`}
+      okText="确认批量消课"
+      cancelText="取消"
+      confirmLoading={loading}
+      onCancel={onClose}
+      onOk={() => form.submit()}
+    >
+      <Form form={form} layout="vertical" preserve={false} onFinish={onSubmit}>
+        <Alert
+          type="info"
+          showIcon
+          message="本次批量操作固定使用普通课时"
+          description="每位学员按课次名单中的计划课时数消费。周期卡不会被自动选择；如需使用周期卡，请关闭此弹框并逐人消课。"
+          style={{ marginBottom: 16 }}
+        />
+        <Typography.Paragraph>
+          将处理：{entries.map((entry) => entry.studentNameSnapshot).join('、') || '暂无学员'}
+        </Typography.Paragraph>
+        <Form.Item label="消费说明" name="reason">
+          <Input.TextArea maxLength={500} rows={3} placeholder="可选，例如：本次到课批量消课" />
+        </Form.Item>
       </Form>
     </Modal>
   );

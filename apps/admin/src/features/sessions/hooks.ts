@@ -4,6 +4,7 @@ import type {
   CancelLessonSessionRequest,
   CompleteLessonSessionRequest,
   ConsumeLessonSessionStudentRequest,
+  ConsumeLessonSessionStudentsRequest,
   CreateLessonSessionRequest,
   LessonSessionListQuery,
   OpenLessonSessionRequest,
@@ -14,6 +15,7 @@ import type {
 } from '@lingcoo-edu-oms/contracts';
 
 import { lessonSessionsApi } from './api';
+import { listActivePeriodCardEntitlements } from './period-card-api';
 
 export const lessonSessionKeys = {
   all: ['education', 'lesson-sessions'] as const,
@@ -27,6 +29,8 @@ export const lessonSessionKeys = {
     [...lessonSessionKeys.all, 'teachers', institutionId, sessionId] as const,
   workbench: (institutionId: string, query: Partial<LessonSessionListQuery>) =>
     [...lessonSessionKeys.all, 'workbench', institutionId, query] as const,
+  periodCardEntitlements: (institutionId: string, studentId: string) =>
+    [...lessonSessionKeys.all, 'period-card-entitlements', institutionId, studentId] as const,
 };
 
 function useRefreshLessonSessions() {
@@ -236,6 +240,44 @@ export function useConsumeLessonSessionStudent() {
     onSuccess: (result) =>
       refresh(result.rosterEntry.institutionId, result.rosterEntry.lessonSessionId),
   });
+}
+
+export function useConsumeLessonSessionStudents() {
+  const refresh = useRefreshLessonSessions();
+  return useMutation({
+    mutationFn: ({
+      institutionId,
+      sessionId,
+      input,
+    }: {
+      institutionId: string;
+      sessionId: string;
+      input: ConsumeLessonSessionStudentsRequest;
+    }) => lessonSessionsApi.consumeMany(institutionId, sessionId, input),
+    onSuccess: (_result, variables) => refresh(variables.institutionId, variables.sessionId),
+  });
+}
+
+export function useActivePeriodCardEntitlements(
+  institutionId: string | null,
+  studentId: string | null,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: periodCardEntitlementsKey(institutionId ?? '', studentId ?? ''),
+    queryFn: () =>
+      listActivePeriodCardEntitlements(institutionId!, {
+        studentId: studentId!,
+        status: 'active',
+        page: 1,
+        pageSize: 100,
+      }),
+    enabled: enabled && Boolean(institutionId && studentId),
+  });
+}
+
+function periodCardEntitlementsKey(institutionId: string, studentId: string) {
+  return lessonSessionKeys.periodCardEntitlements(institutionId, studentId);
 }
 
 export function useReverseLessonSessionConsumption() {
