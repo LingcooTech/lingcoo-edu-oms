@@ -20,6 +20,7 @@ export const lessonSessionConsumptionStatusSchema = z.enum([
   'reversed',
   'failed',
 ]);
+export const lessonSessionConsumptionSourceSchema = z.enum(['lesson_units', 'period_card']);
 export const lessonSessionTeacherRoleSchema = z.enum(['instructor', 'assistant']);
 
 const sessionNameSchema = z.string().trim().min(1).max(160);
@@ -121,10 +122,13 @@ export const lessonSessionRosterEntrySchema = z.object({
   attendanceRecordedAt: isoDateTimeSchema.nullable(),
   attendanceRecordedBy: idSchema.nullable(),
   consumptionStatus: lessonSessionConsumptionStatusSchema,
+  consumptionSource: lessonSessionConsumptionSourceSchema.nullable(),
   plannedUnits: lessonUnitsSchema,
   consumedUnits: lessonUnitsSchema.nullable(),
   movementId: idSchema.nullable(),
   reversalMovementId: idSchema.nullable(),
+  periodCardEntitlementId: idSchema.nullable(),
+  periodCardUsageId: idSchema.nullable(),
   consumptionOperationId: operationIdSchema.nullable(),
   reversalOperationId: operationIdSchema.nullable(),
   consumedAt: isoDateTimeSchema.nullable(),
@@ -234,19 +238,45 @@ export const cancelLessonSessionRequestSchema = z.object({
   reason: optionalReasonSchema.optional().default(null),
 });
 
-export const consumeLessonSessionStudentRequestSchema = z.object({
-  operationId: operationIdSchema,
-  expectedRevision: expectedRevisionSchema,
-  units: lessonUnitsSchema,
-  reason: optionalReasonSchema.optional().default(null),
-});
+const consumptionPaymentSourceFields = {
+  consumptionSource: lessonSessionConsumptionSourceSchema.optional().default('lesson_units'),
+  periodCardEntitlementId: idSchema.nullable().optional().default(null),
+};
 
-export const lessonSessionConsumptionItemSchema = z.object({
-  rosterEntryId: idSchema,
-  expectedRevision: expectedRevisionSchema,
-  units: lessonUnitsSchema,
-  reason: optionalReasonSchema.optional().default(null),
-});
+function hasValidConsumptionPaymentSource(value: {
+  consumptionSource?: 'lesson_units' | 'period_card';
+  periodCardEntitlementId?: string | null;
+}) {
+  return value.consumptionSource === 'period_card'
+    ? Boolean(value.periodCardEntitlementId)
+    : !value.periodCardEntitlementId;
+}
+
+export const consumeLessonSessionStudentRequestSchema = z
+  .object({
+    operationId: operationIdSchema,
+    expectedRevision: expectedRevisionSchema,
+    units: lessonUnitsSchema,
+    reason: optionalReasonSchema.optional().default(null),
+    ...consumptionPaymentSourceFields,
+  })
+  .refine(hasValidConsumptionPaymentSource, {
+    path: ['periodCardEntitlementId'],
+    message: '周期卡消课必须指定周期卡权益，普通课时消课不能指定周期卡权益',
+  });
+
+export const lessonSessionConsumptionItemSchema = z
+  .object({
+    rosterEntryId: idSchema,
+    expectedRevision: expectedRevisionSchema,
+    units: lessonUnitsSchema,
+    reason: optionalReasonSchema.optional().default(null),
+    ...consumptionPaymentSourceFields,
+  })
+  .refine(hasValidConsumptionPaymentSource, {
+    path: ['periodCardEntitlementId'],
+    message: '周期卡消课必须指定周期卡权益，普通课时消课不能指定周期卡权益',
+  });
 
 export const consumeLessonSessionStudentsRequestSchema = z.object({
   operationId: operationIdSchema,
@@ -268,6 +298,7 @@ export const reverseLessonSessionConsumptionRequestSchema = z.object({
 export const lessonSessionConsumptionResultSchema = z.object({
   rosterEntry: lessonSessionRosterEntrySchema,
   movementId: idSchema.nullable(),
+  periodCardUsageId: idSchema.nullable(),
   consumedAt: isoDateTimeSchema.nullable(),
   reversedAt: isoDateTimeSchema.nullable(),
   errorCode: consumptionErrorCodeSchema,
@@ -283,6 +314,7 @@ export type LessonSessionStatus = z.infer<typeof lessonSessionStatusSchema>;
 export type LessonSessionSource = z.infer<typeof lessonSessionSourceSchema>;
 export type LessonSessionAttendanceStatus = z.infer<typeof lessonSessionAttendanceStatusSchema>;
 export type LessonSessionConsumptionStatus = z.infer<typeof lessonSessionConsumptionStatusSchema>;
+export type LessonSessionConsumptionSource = z.infer<typeof lessonSessionConsumptionSourceSchema>;
 export type LessonSessionTeacherRole = z.infer<typeof lessonSessionTeacherRoleSchema>;
 export type LessonSession = z.infer<typeof lessonSessionSchema>;
 export type LessonSessionListQuery = z.output<typeof lessonSessionListQuerySchema>;

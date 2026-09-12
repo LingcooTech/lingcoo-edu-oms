@@ -232,6 +232,13 @@
       "when": 1789123846045,
       "tag": "0032_yellow_centennial",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1789190329897,
+      "tag": "0033_parched_abomination",
+      "breakpoints": true
     }
   ]
 }

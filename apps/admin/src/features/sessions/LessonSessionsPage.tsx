@@ -283,7 +283,7 @@ export function LessonSessionsPage({ mode = 'sessions' }: { mode?: PageMode }) {
     [institutions.data, organization.data?.operationMode],
   );
 
-  const rosterItems = roster.data?.items ?? [];
+  const rosterItems = useMemo(() => roster.data?.items ?? [], [roster.data?.items]);
   const pendingCount = rosterItems.filter((item) => item.attendanceStatus === 'pending').length;
   const attendedCount = rosterItems.filter((item) =>
     ['present', 'late'].includes(item.attendanceStatus),
@@ -320,9 +320,12 @@ export function LessonSessionsPage({ mode = 'sessions' }: { mode?: PageMode }) {
   );
 
   useEffect(() => {
-    setSelectedRosterEntryIds((selected) =>
-      selected.filter((id) => bulkConsumableEntries.some((entry) => entry.id === id)),
-    );
+    setSelectedRosterEntryIds((selected) => {
+      const filtered = selected.filter((id) =>
+        bulkConsumableEntries.some((entry) => entry.id === id),
+      );
+      return filtered.length === selected.length ? selected : filtered;
+    });
   }, [bulkConsumableEntries]);
 
   const handleLifecycle = async (

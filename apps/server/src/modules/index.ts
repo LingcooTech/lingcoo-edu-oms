@@ -61,6 +61,7 @@ import {
   createLessonSessionsModule,
   createLessonSessionsService,
 } from './lesson-sessions/public.js';
+import { createPeriodCardsModule, createPeriodCardsService } from './period-cards/public.js';
 import {
   createTeachingResourcesModule,
   createTeachingResourcesService,
@@ -237,12 +238,20 @@ export async function registerApplicationModules(
     settings: settings.service,
   });
   lessonCommerceRef.current = lessonCommerce;
+  const periodCards = createPeriodCardsService({
+    database: dependencies.database,
+    institutions: organization,
+    students: people,
+    idempotency,
+    audit,
+  });
   const lessonSessions = createLessonSessionsService({
     database: dependencies.database,
     institutions: organization,
     students: people,
     teachers: people,
     lessonAccounts,
+    periodCards,
     idempotency,
     audit,
   });
@@ -352,12 +361,23 @@ export async function registerApplicationModules(
     }),
   );
   await app.register(
+    createPeriodCardsModule({
+      database: dependencies.database,
+      institutions: organization,
+      students: people,
+      idempotency,
+      audit,
+      service: periodCards,
+    }),
+  );
+  await app.register(
     createLessonSessionsModule({
       database: dependencies.database,
       institutions: organization,
       students: people,
       teachers: people,
       lessonAccounts,
+      periodCards,
       idempotency,
       audit,
       service: lessonSessions,

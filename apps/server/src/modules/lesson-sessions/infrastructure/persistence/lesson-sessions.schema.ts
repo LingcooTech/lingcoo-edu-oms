@@ -100,6 +100,9 @@ export const teachingSessionAttendances = pgTable(
       .$type<'not_consumed' | 'consumed' | 'reversed' | 'failed'>()
       .notNull()
       .default('not_consumed'),
+    consumptionSource: varchar('consumption_source', { length: 24 }).$type<
+      'lesson_units' | 'period_card'
+    >(),
     plannedUnits: integer('planned_units').notNull(),
     consumedUnits: integer('consumed_units').notNull().default(0),
     attendanceRecordedAt: timestamp('attendance_recorded_at', { withTimezone: true }),
@@ -115,6 +118,8 @@ export const teachingSessionAttendances = pgTable(
       () => lessonMovementsForeignKeyTarget.id,
       { onDelete: 'restrict' },
     ),
+    periodCardEntitlementId: uuid('period_card_entitlement_id'),
+    periodCardUsageId: uuid('period_card_usage_id'),
     consumptionOperationId: uuid('consumption_operation_id'),
     reversalOperationId: uuid('reversal_operation_id'),
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
@@ -148,6 +153,9 @@ export const teachingSessionAttendances = pgTable(
     uniqueIndex('teaching_session_attendances_reversal_movement_unique')
       .on(table.reversalMovementId)
       .where(sql`${table.reversalMovementId} is not null`),
+    uniqueIndex('teaching_session_attendances_period_card_usage_unique')
+      .on(table.periodCardUsageId)
+      .where(sql`${table.periodCardUsageId} is not null`),
     index('teaching_session_attendances_session_status_idx').on(
       table.sessionId,
       table.attendanceStatus,
@@ -162,12 +170,16 @@ export const teachingSessionAttendances = pgTable(
       'teaching_session_attendances_consumption_check',
       sql`${table.consumptionStatus} in ('not_consumed','consumed','reversed','failed')`,
     ),
+    check(
+      'teaching_session_attendances_consumption_source_check',
+      sql`${table.consumptionSource} is null or ${table.consumptionSource} in ('lesson_units','period_card')`,
+    ),
     check('teaching_session_attendances_planned_units_check', sql`${table.plannedUnits} > 0`),
     check('teaching_session_attendances_consumed_units_check', sql`${table.consumedUnits} >= 0`),
     check('teaching_session_attendances_revision_check', sql`${table.revision} > 0`),
     check(
       'teaching_session_attendances_consumption_state_check',
-      sql`(${table.consumptionStatus} = 'not_consumed' and ${table.consumedUnits} = 0 and ${table.consumptionMovementId} is null and ${table.reversalMovementId} is null and ${table.consumptionOperationId} is null and ${table.reversalOperationId} is null and ${table.consumedAt} is null and ${table.reversedAt} is null) or (${table.consumptionStatus} = 'failed' and ${table.consumedUnits} = 0 and ${table.consumptionMovementId} is null and ${table.reversalMovementId} is null and ${table.consumptionOperationId} is not null and ${table.reversalOperationId} is null and ${table.consumedAt} is null and ${table.reversedAt} is null) or (${table.consumptionStatus} = 'consumed' and ${table.consumedUnits} > 0 and ${table.consumptionMovementId} is not null and ${table.reversalMovementId} is null and ${table.consumptionOperationId} is not null and ${table.reversalOperationId} is null and ${table.consumedAt} is not null and ${table.reversedAt} is null) or (${table.consumptionStatus} = 'reversed' and ${table.consumedUnits} > 0 and ${table.consumptionMovementId} is not null and ${table.reversalMovementId} is not null and ${table.consumptionOperationId} is not null and ${table.reversalOperationId} is not null and ${table.consumedAt} is not null and ${table.reversedAt} is not null)`,
+      sql`(${table.consumptionStatus} = 'not_consumed' and ${table.consumptionSource} is null and ${table.consumedUnits} = 0 and ${table.consumptionMovementId} is null and ${table.reversalMovementId} is null and ${table.periodCardEntitlementId} is null and ${table.periodCardUsageId} is null and ${table.consumptionOperationId} is null and ${table.reversalOperationId} is null and ${table.consumedAt} is null and ${table.reversedAt} is null) or (${table.consumptionStatus} = 'failed' and ${table.consumptionSource} is not null and ${table.consumedUnits} = 0 and ${table.consumptionMovementId} is null and ${table.reversalMovementId} is null and (${table.consumptionSource} = 'lesson_units' and ${table.periodCardEntitlementId} is null and ${table.periodCardUsageId} is null or ${table.consumptionSource} = 'period_card' and ${table.periodCardEntitlementId} is not null and ${table.periodCardUsageId} is null) and ${table.consumptionOperationId} is not null and ${table.reversalOperationId} is null and ${table.consumedAt} is null and ${table.reversedAt} is null) or (${table.consumptionStatus} = 'consumed' and ${table.consumptionSource} is not null and ${table.consumedUnits} > 0 and (${table.consumptionSource} = 'lesson_units' and ${table.consumptionMovementId} is not null and ${table.reversalMovementId} is null and ${table.periodCardEntitlementId} is null and ${table.periodCardUsageId} is null or ${table.consumptionSource} = 'period_card' and ${table.consumptionMovementId} is null and ${table.reversalMovementId} is null and ${table.periodCardEntitlementId} is not null and ${table.periodCardUsageId} is not null) and ${table.consumptionOperationId} is not null and ${table.reversalOperationId} is null and ${table.consumedAt} is not null and ${table.reversedAt} is null) or (${table.consumptionStatus} = 'reversed' and ${table.consumptionSource} is not null and ${table.consumedUnits} > 0 and (${table.consumptionSource} = 'lesson_units' and ${table.consumptionMovementId} is not null and ${table.reversalMovementId} is not null and ${table.periodCardEntitlementId} is null and ${table.periodCardUsageId} is null or ${table.consumptionSource} = 'period_card' and ${table.consumptionMovementId} is null and ${table.reversalMovementId} is null and ${table.periodCardEntitlementId} is not null and ${table.periodCardUsageId} is not null) and ${table.consumptionOperationId} is not null and ${table.reversalOperationId} is not null and ${table.consumedAt} is not null and ${table.reversedAt} is not null)`,
     ),
   ],
 );

@@ -188,6 +188,14 @@ export const foundationNavigation: AdminNavigationItem[] = [
     section: 'ledger',
   },
   {
+    key: 'period-cards',
+    label: '周期卡',
+    path: '/period-cards',
+    icon: <CalendarOutlined />,
+    permission: 'education.lesson-packages.read',
+    section: 'ledger',
+  },
+  {
     key: 'lesson-accounts',
     label: '课时账户',
     path: '/lesson-accounts',

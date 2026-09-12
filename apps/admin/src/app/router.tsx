@@ -128,6 +128,11 @@ const LessonAccountsPage = lazy(() =>
     default: module.LessonAccountsPage,
   })),
 );
+const PeriodCardsPage = lazy(() =>
+  import('../features/period-cards/PeriodCardsPage').then((module) => ({
+    default: module.PeriodCardsPage,
+  })),
+);
 const OrdersPage = lazy(() =>
   import('../features/orders/OrdersPage').then((module) => ({ default: module.OrdersPage })),
 );
@@ -212,6 +217,7 @@ export function AppRouter() {
             </Route>
             <Route element={<RequirePermission permissions={['education.lesson-packages.read']} />}>
               <Route path="lesson-packages" element={<LessonPackagesPage />} />
+              <Route path="period-cards" element={<PeriodCardsPage />} />
             </Route>
             <Route element={<RequirePermission permissions={['education.lesson-balances.read']} />}>
               <Route path="lesson-accounts" element={<LessonAccountsPage />} />

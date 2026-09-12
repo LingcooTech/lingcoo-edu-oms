@@ -6,6 +6,7 @@ import type { IdempotencyService } from '../idempotency/public.js';
 import type { LessonConsumptionLedger } from '../lesson-accounts/public.js';
 import type { InstitutionDirectory } from '../organization/public.js';
 import type { StudentDirectory, TeacherDirectory } from '../people/public.js';
+import type { PeriodCardConsumptionPort } from '../period-cards/public.js';
 import { registerLessonSessionsRoutes } from './api/routes.js';
 import { LessonSessionsService } from './application/lesson-sessions.service.js';
 import { LessonSessionsRepository } from './infrastructure/persistence/lesson-sessions.repository.js';
@@ -16,6 +17,7 @@ export interface LessonSessionsDependencies {
   students: StudentDirectory;
   teachers: TeacherDirectory;
   lessonAccounts: LessonConsumptionLedger;
+  periodCards: PeriodCardConsumptionPort;
   idempotency: IdempotencyService;
   audit: AuditWriter;
   service?: LessonSessionsService;
@@ -29,6 +31,7 @@ export function createLessonSessionsService(dependencies: LessonSessionsDependen
     dependencies.students,
     dependencies.teachers,
     dependencies.lessonAccounts,
+    dependencies.periodCards,
     dependencies.idempotency,
     dependencies.audit,
   );

@@ -32,6 +32,7 @@ import type {
 import type { IdempotencyService } from '../../idempotency/public.js';
 import type { InstitutionDirectory } from '../../organization/public.js';
 import type { StudentDirectory, TeacherDirectory } from '../../people/public.js';
+import type { PeriodCardConsumptionPort } from '../../period-cards/public.js';
 import { canConsumeAttendance } from '../domain/model.js';
 import {
   LessonSessionsRepository,
@@ -120,6 +121,7 @@ export class LessonSessionsService implements LessonSessionSchedulingPort {
     private readonly students: StudentDirectory,
     private readonly teachers: TeacherDirectory,
     private readonly lessonAccounts: LessonConsumptionLedger,
+    private readonly periodCards: PeriodCardConsumptionPort,
     private readonly idempotency: IdempotencyService,
     private readonly audit: AuditWriter,
   ) {}
@@ -713,6 +715,7 @@ export class LessonSessionsService implements LessonSessionSchedulingPort {
         actorId: context.actorId,
       },
       async (transaction) => {
+        const consumptionSource = input.consumptionSource ?? 'lesson_units';
         const session = await this.requireSessionForUpdate(institutionId, sessionId, transaction);
         if (!['open', 'completed'].includes(session.status)) {
           throw new ApiError(409, 'LESSON_SESSION_NOT_CONSUMABLE', '该课次当前不能消课');
@@ -725,45 +728,88 @@ export class LessonSessionsService implements LessonSessionSchedulingPort {
         if (!['not_consumed', 'failed', 'reversed'].includes(record.consumptionStatus)) {
           throw new ApiError(409, 'LESSON_SESSION_ALREADY_CONSUMED', '该学员课次已经处理过消课');
         }
-        let mutation;
+        let lessonMutation: Awaited<
+          ReturnType<LessonConsumptionLedger['consumeInTransaction']>
+        > | null = null;
+        let periodCardUsageId: string | null = null;
         try {
-          mutation = await this.lessonAccounts.consumeInTransaction(
-            {
-              institutionId,
-              studentId: record.studentId,
-              units: input.units,
-              reason: input.reason ?? `课次消课：${session.name}`,
-              sourceReference: `lesson-session:${session.id}:roster:${record.id}`,
-              metadata: { lessonSessionId: session.id, rosterEntryId: record.id },
-            },
-            context,
-            transaction,
-          );
+          if (consumptionSource === 'period_card') {
+            const periodMutation = await this.periodCards.useInTransaction(
+              {
+                institutionId,
+                studentId: record.studentId,
+                entitlementId: input.periodCardEntitlementId!,
+                quantity: input.units,
+                reason: input.reason ?? `课次使用周期卡：${session.name}`,
+                sourceReference: `lesson-session:${session.id}:roster:${record.id}`,
+                occurredAt: session.startsAt,
+                operationId: input.operationId,
+              },
+              context,
+              transaction,
+            );
+            periodCardUsageId = periodMutation.usage.id;
+          } else {
+            lessonMutation = await this.lessonAccounts.consumeInTransaction(
+              {
+                institutionId,
+                studentId: record.studentId,
+                units: input.units,
+                reason: input.reason ?? `课次消课：${session.name}`,
+                sourceReference: `lesson-session:${session.id}:roster:${record.id}`,
+                metadata: { lessonSessionId: session.id, rosterEntryId: record.id },
+              },
+              context,
+              transaction,
+            );
+          }
         } catch (error) {
           if (
             !(error instanceof ApiError) ||
-            !['LESSON_BALANCE_INSUFFICIENT', 'LESSON_BATCH_BALANCE_MISMATCH'].includes(error.code)
+            !(
+              ['LESSON_BALANCE_INSUFFICIENT', 'LESSON_BATCH_BALANCE_MISMATCH'].includes(
+                error.code,
+              ) || error.code.startsWith('PERIOD_CARD_')
+            )
           ) {
             throw error;
           }
           const failed = await this.repository.markConsumptionFailed(
             record,
-            { operationId: input.operationId, errorCode: error.code, errorMessage: error.message },
+            {
+              operationId: input.operationId,
+              errorCode: error.code,
+              errorMessage: error.message,
+              source: consumptionSource,
+              periodCardEntitlementId: input.periodCardEntitlementId,
+            },
             transaction,
           );
           if (!failed) throw this.versionConflict('消课记录');
           await this.auditRosterConsumption('failed', failed, context, transaction);
           return this.consumptionResult(failed);
         }
-        const updated = await this.repository.markConsumed(
-          record,
-          {
-            units: input.units,
-            movementId: mutation.movement.id,
-            operationId: input.operationId,
-          },
-          transaction,
-        );
+        const updated =
+          consumptionSource === 'period_card'
+            ? await this.repository.markPeriodCardConsumed(
+                record,
+                {
+                  units: input.units,
+                  entitlementId: input.periodCardEntitlementId!,
+                  usageId: periodCardUsageId!,
+                  operationId: input.operationId,
+                },
+                transaction,
+              )
+            : await this.repository.markConsumed(
+                record,
+                {
+                  units: input.units,
+                  movementId: lessonMutation!.movement.id,
+                  operationId: input.operationId,
+                },
+                transaction,
+              );
         if (!updated) throw this.versionConflict('消课记录');
         await this.auditRosterConsumption('consumed', updated, context, transaction);
         return this.consumptionResult(updated);
@@ -822,24 +868,45 @@ export class LessonSessionsService implements LessonSessionSchedulingPort {
         }
         const record = await this.requireRosterForUpdate(session.id, rosterEntryId, transaction);
         this.assertRevision(record.revision, input.expectedRevision, '消课记录');
-        if (record.consumptionStatus !== 'consumed' || !record.consumptionMovementId) {
+        if (record.consumptionStatus !== 'consumed' || !record.consumptionSource) {
           throw new ApiError(409, 'LESSON_SESSION_NOT_CONSUMED', '该学员课次没有可撤销的消课');
         }
-        const mutation = await this.lessonAccounts.reverseConsumptionInTransaction(
-          {
-            institutionId,
-            studentId: record.studentId,
-            movementId: record.consumptionMovementId,
-            reason: input.reason,
-            sourceReference: `lesson-session:${session.id}:roster:${record.id}:reversal`,
-            metadata: { lessonSessionId: session.id, rosterEntryId: record.id },
-          },
-          context,
-          transaction,
-        );
+        let reversalMovementId: string | null = null;
+        if (record.consumptionSource === 'period_card') {
+          if (!record.periodCardUsageId) {
+            throw new ApiError(409, 'LESSON_SESSION_PERIOD_USAGE_MISSING', '周期卡使用记录缺失');
+          }
+          await this.periodCards.reverseInTransaction(
+            {
+              institutionId,
+              usageId: record.periodCardUsageId,
+              operationId: input.operationId,
+              reason: input.reason,
+            },
+            context,
+            transaction,
+          );
+        } else {
+          if (!record.consumptionMovementId) {
+            throw new ApiError(409, 'LESSON_SESSION_MOVEMENT_MISSING', '课时消费流水缺失');
+          }
+          const mutation = await this.lessonAccounts.reverseConsumptionInTransaction(
+            {
+              institutionId,
+              studentId: record.studentId,
+              movementId: record.consumptionMovementId,
+              reason: input.reason,
+              sourceReference: `lesson-session:${session.id}:roster:${record.id}:reversal`,
+              metadata: { lessonSessionId: session.id, rosterEntryId: record.id },
+            },
+            context,
+            transaction,
+          );
+          reversalMovementId = mutation.movement.id;
+        }
         const updated = await this.repository.markReversed(
           record,
-          { reversalMovementId: mutation.movement.id, operationId: input.operationId },
+          { reversalMovementId, operationId: input.operationId },
           transaction,
         );
         if (!updated) throw this.versionConflict('消课记录');
@@ -1016,10 +1083,13 @@ export class LessonSessionsService implements LessonSessionSchedulingPort {
       attendanceRecordedAt: record.attendanceRecordedAt?.toISOString() ?? null,
       attendanceRecordedBy: record.attendanceRecordedBy,
       consumptionStatus: record.consumptionStatus,
+      consumptionSource: record.consumptionSource,
       plannedUnits: record.plannedUnits,
       consumedUnits: record.consumedUnits > 0 ? record.consumedUnits : null,
       movementId: record.consumptionMovementId,
       reversalMovementId: record.reversalMovementId,
+      periodCardEntitlementId: record.periodCardEntitlementId,
+      periodCardUsageId: record.periodCardUsageId,
       consumptionOperationId: record.consumptionOperationId,
       reversalOperationId: record.reversalOperationId,
       consumedAt: record.consumedAt?.toISOString() ?? null,
@@ -1036,6 +1106,7 @@ export class LessonSessionsService implements LessonSessionSchedulingPort {
     return {
       rosterEntry: this.rosterView(record),
       movementId: record.reversalMovementId ?? record.consumptionMovementId,
+      periodCardUsageId: record.periodCardUsageId,
       consumedAt: record.consumedAt?.toISOString() ?? null,
       reversedAt: record.reversedAt?.toISOString() ?? null,
       errorCode: record.consumptionErrorCode,

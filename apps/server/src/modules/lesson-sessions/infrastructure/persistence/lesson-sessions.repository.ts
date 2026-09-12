@@ -454,8 +454,11 @@ export class LessonSessionsRepository {
       .update(teachingSessionAttendances)
       .set({
         consumptionStatus: 'consumed',
+        consumptionSource: 'lesson_units',
         consumedUnits: input.units,
         consumptionMovementId: input.movementId,
+        periodCardEntitlementId: null,
+        periodCardUsageId: null,
         consumptionOperationId: input.operationId,
         reversalMovementId: null,
         reversalOperationId: null,
@@ -476,18 +479,67 @@ export class LessonSessionsRepository {
     return updated ?? null;
   }
 
+  async markPeriodCardConsumed(
+    record: LessonSessionAttendanceRecord,
+    input: {
+      units: number;
+      entitlementId: string;
+      usageId: string;
+      operationId: string;
+    },
+    executor: DatabaseTransaction,
+  ) {
+    const now = new Date();
+    const [updated] = await executor
+      .update(teachingSessionAttendances)
+      .set({
+        consumptionStatus: 'consumed',
+        consumptionSource: 'period_card',
+        consumedUnits: input.units,
+        consumptionMovementId: null,
+        reversalMovementId: null,
+        periodCardEntitlementId: input.entitlementId,
+        periodCardUsageId: input.usageId,
+        consumptionOperationId: input.operationId,
+        reversalOperationId: null,
+        consumedAt: now,
+        reversedAt: null,
+        consumptionErrorCode: null,
+        consumptionErrorMessage: null,
+        revision: record.revision + 1,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(teachingSessionAttendances.id, record.id),
+          eq(teachingSessionAttendances.revision, record.revision),
+        ),
+      )
+      .returning();
+    return updated ?? null;
+  }
+
   async markConsumptionFailed(
     record: LessonSessionAttendanceRecord,
-    input: { operationId: string; errorCode: string; errorMessage: string },
+    input: {
+      operationId: string;
+      errorCode: string;
+      errorMessage: string;
+      source: 'lesson_units' | 'period_card';
+      periodCardEntitlementId?: string | null;
+    },
     executor: DatabaseTransaction,
   ) {
     const [updated] = await executor
       .update(teachingSessionAttendances)
       .set({
         consumptionStatus: 'failed',
+        consumptionSource: input.source,
         consumedUnits: 0,
         consumptionMovementId: null,
         reversalMovementId: null,
+        periodCardEntitlementId: input.periodCardEntitlementId ?? null,
+        periodCardUsageId: null,
         reversalOperationId: null,
         consumedAt: null,
         reversedAt: null,
@@ -509,7 +561,7 @@ export class LessonSessionsRepository {
 
   async markReversed(
     record: LessonSessionAttendanceRecord,
-    input: { reversalMovementId: string; operationId: string },
+    input: { reversalMovementId?: string | null; operationId: string },
     executor: DatabaseTransaction,
   ) {
     const now = new Date();
@@ -517,7 +569,7 @@ export class LessonSessionsRepository {
       .update(teachingSessionAttendances)
       .set({
         consumptionStatus: 'reversed',
-        reversalMovementId: input.reversalMovementId,
+        reversalMovementId: input.reversalMovementId ?? null,
         reversalOperationId: input.operationId,
         reversedAt: now,
         revision: record.revision + 1,
