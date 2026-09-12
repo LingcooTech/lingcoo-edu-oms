@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { idSchema } from './common/ids.js';
 import { pageQuerySchema } from './common/pagination.js';
 import { isoDateTimeSchema } from './common/time.js';
+import { paymentIntentDetailSchema, paymentProviderSchema } from './payments.js';
 
 export const admissionLeadStatusSchema = z.enum([
   'new',
@@ -16,10 +17,20 @@ export const admissionLeadStatusSchema = z.enum([
 ]);
 export const admissionTrialStatusSchema = z.enum(['open', 'closed', 'cancelled', 'completed']);
 export const admissionRegistrationStatusSchema = z.enum([
+  'pending_payment',
   'booked',
   'checked_in',
   'no_show',
   'cancelled',
+  'expired',
+]);
+export const admissionReservationPaymentStatusSchema = z.enum([
+  'not_required',
+  'pending',
+  'succeeded',
+  'failed',
+  'closed',
+  'refunded',
 ]);
 
 export const admissionLeadSchema = z.object({
@@ -94,6 +105,9 @@ export const admissionTrialSessionSchema = z.object({
   endsAt: isoDateTimeSchema,
   capacity: z.number().int().positive(),
   bookedCount: z.number().int().nonnegative(),
+  reservationFeeAmountMinor: z.number().int().nonnegative(),
+  reservationHoldMinutes: z.number().int().min(5).max(60),
+  reservationRefundCutoffHours: z.number().int().min(0).max(168),
   status: admissionTrialStatusSchema,
   notes: z.string().max(2_000).nullable(),
   revision: z.number().int().positive(),
@@ -119,6 +133,9 @@ export const createAdmissionTrialRequestSchema = z.object({
   startsAt: isoDateTimeSchema,
   endsAt: isoDateTimeSchema,
   capacity: z.number().int().positive().max(500),
+  reservationFeeAmountMinor: z.number().int().nonnegative().default(0),
+  reservationHoldMinutes: z.number().int().min(5).max(60).default(15),
+  reservationRefundCutoffHours: z.number().int().min(0).max(168).default(12),
   notes: z.string().trim().max(2_000).nullable().optional().default(null),
 });
 export const updateAdmissionTrialRequestSchema = createAdmissionTrialRequestSchema
@@ -131,10 +148,31 @@ export const admissionTrialRegistrationSchema = z.object({
   id: idSchema,
   trialSessionId: idSchema,
   leadId: idSchema,
+  institutionId: idSchema,
+  trialTitleSnapshot: z.string().min(1).max(160),
+  trialStartsAtSnapshot: isoDateTimeSchema,
   status: admissionRegistrationStatusSchema,
+  guardianNameSnapshot: z.string().min(1).max(120).nullable(),
+  phoneSnapshot: z.string().min(6).max(40).nullable(),
+  studentNameSnapshot: z.string().min(1).max(120).nullable(),
+  gradeSnapshot: z.string().max(80).nullable(),
+  payerIdentityUserId: idSchema.nullable(),
+  orderNo: z.string().min(1).max(64).nullable(),
+  receiptNo: z.string().min(1).max(80).nullable(),
+  amountMinor: z.number().int().nonnegative(),
+  currency: z.literal('CNY'),
+  provider: paymentProviderSchema.nullable(),
+  paymentIntentId: idSchema.nullable(),
+  paymentStatus: admissionReservationPaymentStatusSchema,
+  expiresAt: isoDateTimeSchema.nullable(),
+  paidAt: isoDateTimeSchema.nullable(),
+  refundCutoffAt: isoDateTimeSchema.nullable(),
   checkedInAt: isoDateTimeSchema.nullable(),
+  cancelledAt: isoDateTimeSchema.nullable(),
   notes: z.string().max(2_000).nullable(),
+  revision: z.number().int().positive(),
   createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
 });
 export const admissionTrialRegistrationListSchema = z.object({
   items: z.array(admissionTrialRegistrationSchema),
@@ -142,6 +180,30 @@ export const admissionTrialRegistrationListSchema = z.object({
 export const bookAdmissionTrialRequestSchema = z.object({ trialSessionId: idSchema });
 export const checkInAdmissionTrialRequestSchema = z.object({
   notes: z.string().trim().max(2_000).nullable().optional().default(null),
+});
+export const createMiniAdmissionTrialReservationRequestSchema = z.object({
+  guardianName: z.string().trim().min(1).max(120),
+  phone: z.string().trim().min(6).max(40),
+  studentName: z.string().trim().min(1).max(120),
+  grade: z.string().trim().max(80).nullable().optional().default(null),
+  source: z.string().trim().max(120).nullable().optional().default('wechat-mini'),
+  sourceDetail: z.string().trim().max(500).nullable().optional().default(null),
+  provider: paymentProviderSchema.default('mock'),
+});
+export const miniAdmissionTrialReservationCheckoutSchema = z.object({
+  lead: admissionLeadSchema,
+  trial: admissionTrialSessionSchema,
+  registration: admissionTrialRegistrationSchema,
+  payment: paymentIntentDetailSchema.nullable(),
+});
+export const admissionTrialReservationReceiptSchema = z.object({
+  receiptNo: z.string().min(1).max(80),
+  title: z.literal('试听占位费收据'),
+  issuedAt: isoDateTimeSchema,
+  amountMinor: z.number().int().positive(),
+  amountUppercase: z.string().min(1).max(120),
+  trial: admissionTrialSessionSchema,
+  registration: admissionTrialRegistrationSchema,
 });
 export const convertAdmissionLeadRequestSchema = z.object({
   institutionId: idSchema,
@@ -165,3 +227,15 @@ export type CheckInAdmissionTrialRequest = z.infer<typeof checkInAdmissionTrialR
 export type ConvertAdmissionLeadRequest = z.infer<typeof convertAdmissionLeadRequestSchema>;
 export type AdmissionTrialRegistration = z.infer<typeof admissionTrialRegistrationSchema>;
 export type AdmissionTrialRegistrationList = z.infer<typeof admissionTrialRegistrationListSchema>;
+export type AdmissionReservationPaymentStatus = z.infer<
+  typeof admissionReservationPaymentStatusSchema
+>;
+export type CreateMiniAdmissionTrialReservationRequest = z.input<
+  typeof createMiniAdmissionTrialReservationRequestSchema
+>;
+export type MiniAdmissionTrialReservationCheckout = z.infer<
+  typeof miniAdmissionTrialReservationCheckoutSchema
+>;
+export type AdmissionTrialReservationReceipt = z.infer<
+  typeof admissionTrialReservationReceiptSchema
+>;

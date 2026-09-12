@@ -7,6 +7,8 @@ import {
   createAdmissionFollowUpRequestSchema,
   createAdmissionLeadRequestSchema,
   createAdmissionTrialRequestSchema,
+  createMiniAdmissionTrialReservationRequestSchema,
+  idempotencyKeySchema,
   admissionTrialListQuerySchema,
   updateAdmissionLeadRequestSchema,
   updateAdmissionTrialRequestSchema,
@@ -19,6 +21,7 @@ import type { AdmissionsService } from '../application/admissions.service.js';
 
 const leadParams = z.object({ leadId: z.uuid() });
 const trialParams = z.object({ trialSessionId: z.uuid() });
+const registrationParams = z.object({ registrationId: z.uuid() });
 
 export async function registerAdmissionsRoutes(app: FastifyInstance, service: AdmissionsService) {
   const access = { permissions: ['education.leads.read'], allowUnscopedEducation: true } as const;
@@ -119,6 +122,54 @@ export async function registerAdmissionsRoutes(app: FastifyInstance, service: Ad
         actor(request),
       ),
   );
+
+  const authenticated = { access: { authenticated: true } } as const;
+  app.get('/api/mini/admissions/trials', { config: authenticated }, async (request) =>
+    service.listMiniTrials(parse(admissionTrialListQuerySchema, request.query)),
+  );
+  app.post(
+    '/api/mini/admissions/trials/:trialSessionId/reservations',
+    { config: authenticated },
+    async (request, reply) => {
+      const key = parse(idempotencyKeySchema, firstHeader(request.headers['idempotency-key']));
+      const result = await service.createReservationCheckout(
+        userId(request),
+        parse(trialParams, request.params).trialSessionId,
+        parse(createMiniAdmissionTrialReservationRequestSchema, request.body),
+        key,
+        actorWithId(request),
+      );
+      return reply.code(201).send(result);
+    },
+  );
+  app.get(
+    '/api/mini/admissions/trial-reservations/:registrationId',
+    { config: authenticated },
+    async (request) =>
+      service.getReservation(
+        userId(request),
+        parse(registrationParams, request.params).registrationId,
+      ),
+  );
+  app.post(
+    '/api/mini/admissions/trial-reservations/:registrationId/actions/sync',
+    { config: authenticated },
+    async (request) =>
+      service.syncReservation(
+        userId(request),
+        parse(registrationParams, request.params).registrationId,
+        actorWithId(request),
+      ),
+  );
+  app.get(
+    '/api/mini/admissions/trial-reservations/:registrationId/receipt',
+    { config: authenticated },
+    async (request) =>
+      service.receiptForReservation(
+        userId(request),
+        parse(registrationParams, request.params).registrationId,
+      ),
+  );
 }
 
 function parse<T>(schema: z.ZodType<T>, input: unknown): T {
@@ -135,4 +186,16 @@ function actor(request: FastifyRequest) {
     id: user.id,
     label: user.displayName ?? user.email ?? user.phone,
   });
+}
+
+function firstHeader(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function userId(request: FastifyRequest) {
+  return request.identityPrincipal!.user.id;
+}
+
+function actorWithId(request: FastifyRequest) {
+  return { ...actor(request), actorId: userId(request) };
 }

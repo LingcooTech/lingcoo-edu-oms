@@ -9,15 +9,16 @@ import type {
   AccessUser,
   AdmissionLead,
   AdmissionLeadStatus,
+  AdmissionTrialRegistration,
   AdmissionTrialSession,
   CreateAdmissionLeadRequest,
   CreateAdmissionTrialRequest,
+  UpdateAdmissionTrialRequest,
 } from '@lingcoo-edu-oms/contracts';
 import {
   App,
   Button,
   Card,
-  DatePicker,
   Descriptions,
   Form,
   Input,
@@ -30,7 +31,7 @@ import {
   Tag,
   Typography,
 } from 'antd';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { AsyncState } from '../../components/AsyncState';
 import { PageContainer } from '../../components/PageContainer';
@@ -85,6 +86,41 @@ function dateTime(value: string | null | undefined): string | null {
 function displayDate(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—';
 }
+
+function dateTimeLocal(value: string | null | undefined) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+function moneyMinor(value: number) {
+  return value === 0 ? '免费' : `¥${(value / 100).toFixed(2)}`;
+}
+
+const registrationStatus: Record<
+  AdmissionTrialRegistration['status'],
+  { label: string; color: string }
+> = {
+  pending_payment: { label: '待支付', color: 'gold' },
+  booked: { label: '已预约', color: 'purple' },
+  checked_in: { label: '已签到', color: 'success' },
+  no_show: { label: '未到场', color: 'orange' },
+  cancelled: { label: '已取消', color: 'default' },
+  expired: { label: '已过期', color: 'error' },
+};
+
+const paymentStatus: Record<
+  AdmissionTrialRegistration['paymentStatus'],
+  { label: string; color: string }
+> = {
+  not_required: { label: '无需支付', color: 'default' },
+  pending: { label: '待支付', color: 'gold' },
+  succeeded: { label: '已支付', color: 'success' },
+  failed: { label: '支付失败', color: 'error' },
+  closed: { label: '已关闭', color: 'default' },
+  refunded: { label: '已退款', color: 'cyan' },
+};
 
 export function AdmissionsPage({ initialTab = 'leads' }: { initialTab?: 'leads' | 'trials' }) {
   return (
@@ -337,6 +373,7 @@ function LeadModal({
 
   if (!lead) return null;
   const currentLead = lead;
+  const selectedTrial = (trials.data?.items ?? []).find((item) => item.id === trialId);
   async function updateLead(input: { status?: AdmissionLeadStatus; ownerUserId?: string | null }) {
     try {
       await update.mutateAsync({
@@ -469,18 +506,24 @@ function LeadModal({
               value={trialId}
               options={(trials.data?.items ?? []).map((item) => ({
                 value: item.id,
-                label: `${item.title} · ${displayDate(item.startsAt)} · ${item.bookedCount}/${item.capacity}`,
+                label: `${item.title} · ${displayDate(item.startsAt)} · ${item.bookedCount}/${item.capacity} · ${moneyMinor(item.reservationFeeAmountMinor)}`,
               }))}
               onChange={setTrialId}
             />
             <Button
-              disabled={!canManage || !trialId}
+              disabled={!canManage || !trialId || Boolean(selectedTrial?.reservationFeeAmountMinor)}
               loading={book.isPending}
               onClick={() => void bookTrial()}
             >
               预约试听
             </Button>
           </Space>
+          {selectedTrial && selectedTrial.reservationFeeAmountMinor > 0 && (
+            <Typography.Text type="warning">
+              该场次需要支付 {moneyMinor(selectedTrial.reservationFeeAmountMinor)}{' '}
+              占位费，后台不能直接预约；请引导家长在微信小程序完成占位费支付。若直接操作，系统会返回“需走占位费支付”，不会伪造已支付状态。
+            </Typography.Text>
+          )}
           <Space wrap>
             <Select
               allowClear
@@ -548,14 +591,25 @@ function TrialsPanel() {
   const create = useCreateAdmissionTrial();
   const update = useUpdateAdmissionTrial();
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingTrial, setEditingTrial] = useState<AdmissionTrialSession | null>(null);
   const [selected, setSelected] = useState<AdmissionTrialSession | null>(null);
   const [institutionId, setInstitutionId] = useState<string>();
 
   async function submit(values: CreateAdmissionTrialRequest) {
     try {
-      await create.mutateAsync(values);
-      message.success('试听场次已创建');
+      if (editingTrial) {
+        const input: UpdateAdmissionTrialRequest = {
+          ...values,
+          expectedRevision: editingTrial.revision,
+        };
+        await update.mutateAsync({ id: editingTrial.id, input });
+        message.success('试听场次已更新');
+      } else {
+        await create.mutateAsync(values);
+        message.success('试听场次已创建');
+      }
       setCreateOpen(false);
+      setEditingTrial(null);
     } catch (error) {
       message.error(errorMessage(error));
     }
@@ -594,7 +648,14 @@ function TrialsPanel() {
             刷新
           </Button>
           {canManage && (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                setEditingTrial(null);
+                setCreateOpen(true);
+              }}
+            >
               新增试听场次
             </Button>
           )}
@@ -608,7 +669,7 @@ function TrialsPanel() {
         >
           <Table<AdmissionTrialSession>
             rowKey="id"
-            scroll={{ x: 1000 }}
+            scroll={{ x: 1220 }}
             dataSource={(trials.data?.items ?? []).filter(
               (item) => !institutionId || item.institutionId === institutionId,
             )}
@@ -628,9 +689,26 @@ function TrialsPanel() {
                 ),
               },
               {
-                title: '名额',
-                width: 100,
-                render: (_, item) => `${item.bookedCount} / ${item.capacity}`,
+                title: '容量占用',
+                width: 120,
+                render: (_, item) => `${item.bookedCount} / ${item.capacity} 人`,
+              },
+              {
+                title: '占位费',
+                width: 110,
+                render: (_, item) => moneyMinor(item.reservationFeeAmountMinor),
+              },
+              {
+                title: '占位规则',
+                width: 190,
+                render: (_, item) => (
+                  <Space direction="vertical" size={0}>
+                    <span>{item.reservationHoldMinutes} 分钟内完成支付</span>
+                    <Typography.Text type="secondary">
+                      提前 {item.reservationRefundCutoffHours} 小时可退
+                    </Typography.Text>
+                  </Space>
+                ),
               },
               {
                 title: '状态',
@@ -643,9 +721,21 @@ function TrialsPanel() {
               { title: '说明', dataIndex: 'notes', render: (value: string | null) => value || '—' },
               {
                 title: '操作',
-                width: 180,
+                width: 240,
                 render: (_, item) => (
                   <Space>
+                    {canManage && item.status === 'open' && (
+                      <Button
+                        type="link"
+                        icon={<EditOutlined />}
+                        onClick={() => {
+                          setEditingTrial(item);
+                          setCreateOpen(true);
+                        }}
+                      >
+                        编辑
+                      </Button>
+                    )}
                     <Button type="link" onClick={() => setSelected(item)}>
                       报名名单
                     </Button>
@@ -663,8 +753,9 @@ function TrialsPanel() {
       </Card>
       <TrialFormModal
         open={createOpen}
-        loading={create.isPending}
+        loading={create.isPending || update.isPending}
         institutions={institutions.data?.items ?? []}
+        trial={editingTrial}
         onCancel={() => setCreateOpen(false)}
         onSubmit={submit}
       />
@@ -677,23 +768,75 @@ function TrialFormModal({
   open,
   loading,
   institutions,
+  trial,
   onCancel,
   onSubmit,
 }: {
   open: boolean;
   loading: boolean;
   institutions: readonly { id: string; name: string }[];
+  trial: AdmissionTrialSession | null;
   onCancel: () => void;
   onSubmit: (values: CreateAdmissionTrialRequest) => Promise<void>;
 }) {
-  const [form] = Form.useForm<CreateAdmissionTrialRequest>();
+  type TrialFormValues = Omit<CreateAdmissionTrialRequest, 'reservationFeeAmountMinor'> & {
+    reservationFeeAmountYuan: number;
+  };
+  const [form] = Form.useForm<TrialFormValues>();
   const institutionId = Form.useWatch('institutionId', form) ?? null;
   const campuses = useCampuses({ page: 1, pageSize: 100, status: 'active' });
   const courses = useCourses(institutionId, { page: 1, pageSize: 100, status: 'active' });
   const teachers = useTeachers(institutionId, Boolean(institutionId));
+  useEffect(() => {
+    if (!open) return;
+    form.setFieldsValue({
+      institutionId: trial?.institutionId,
+      campusId: trial?.campusId ?? null,
+      courseId: trial?.courseId ?? null,
+      teacherId: trial?.teacherId ?? null,
+      title: trial?.title ?? '',
+      startsAt: dateTimeLocal(trial?.startsAt),
+      endsAt: dateTimeLocal(trial?.endsAt),
+      capacity: trial?.capacity ?? 10,
+      reservationFeeAmountYuan: trial ? trial.reservationFeeAmountMinor / 100 : 0,
+      reservationHoldMinutes: trial?.reservationHoldMinutes ?? 15,
+      reservationRefundCutoffHours: trial?.reservationRefundCutoffHours ?? 12,
+      notes: trial?.notes ?? null,
+    });
+  }, [form, open, trial]);
+
+  function submit(values: TrialFormValues) {
+    const { reservationFeeAmountYuan, ...rest } = values;
+    return onSubmit({
+      ...rest,
+      startsAt: new Date(values.startsAt).toISOString(),
+      endsAt: new Date(values.endsAt).toISOString(),
+      reservationFeeAmountMinor: Math.round(reservationFeeAmountYuan * 100),
+    });
+  }
+
   return (
-    <Modal title="新增试听场次" open={open} footer={null} destroyOnClose onCancel={onCancel}>
-      <Form form={form} layout="vertical" onFinish={onSubmit}>
+    <Modal
+      title={trial ? '编辑试听场次' : '新增试听场次'}
+      open={open}
+      footer={null}
+      destroyOnClose
+      onCancel={onCancel}
+    >
+      <Typography.Paragraph type="secondary">
+        课程、校区和教师只是试听场次的服务上下文，不会限制课时包或课时消费；占位费仅用于锁定试听名额。
+      </Typography.Paragraph>
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={submit}
+        initialValues={{
+          capacity: 10,
+          reservationFeeAmountYuan: 0,
+          reservationHoldMinutes: 15,
+          reservationRefundCutoffHours: 12,
+        }}
+      >
         <Form.Item
           name="institutionId"
           label="所属机构"
@@ -740,25 +883,45 @@ function TrialFormModal({
           label="开始时间"
           rules={[{ required: true, message: '请选择开始时间' }]}
         >
-          <DatePicker
-            showTime
-            style={{ width: '100%' }}
-            onChange={(value) => form.setFieldValue('startsAt', value?.toISOString())}
-          />
+          <Input type="datetime-local" />
         </Form.Item>
         <Form.Item
           name="endsAt"
           label="结束时间"
           rules={[{ required: true, message: '请选择结束时间' }]}
         >
-          <DatePicker
-            showTime
-            style={{ width: '100%' }}
-            onChange={(value) => form.setFieldValue('endsAt', value?.toISOString())}
-          />
+          <Input type="datetime-local" />
         </Form.Item>
         <Form.Item name="capacity" label="人数上限" initialValue={10} rules={[{ required: true }]}>
           <InputNumber min={1} max={500} style={{ width: '100%' }} />
+        </Form.Item>
+        <Form.Item
+          name="reservationFeeAmountYuan"
+          label="占位费（元）"
+          extra="填写 0 表示免费试听；收费场次必须由家长在微信小程序完成支付。"
+          rules={[{ required: true, message: '请输入占位费，免费场次填写 0' }]}
+        >
+          <InputNumber min={0} precision={2} step={0.01} style={{ width: '100%' }} />
+        </Form.Item>
+        <Form.Item
+          name="reservationHoldMinutes"
+          label="支付占位时长（分钟）"
+          extra="报名创建后，家长需要在此时长内完成支付。"
+          rules={[
+            { required: true, type: 'number', min: 5, max: 60, message: '请输入 5～60 分钟' },
+          ]}
+        >
+          <InputNumber min={5} max={60} precision={0} style={{ width: '100%' }} />
+        </Form.Item>
+        <Form.Item
+          name="reservationRefundCutoffHours"
+          label="退款截止提前小时数"
+          extra="距离试听开始不足该小时数时，取消将不再自动退还占位费。"
+          rules={[
+            { required: true, type: 'number', min: 0, max: 168, message: '请输入 0～168 小时' },
+          ]}
+        >
+          <InputNumber min={0} max={168} precision={0} style={{ width: '100%' }} />
         </Form.Item>
         <Form.Item name="notes" label="说明">
           <Input.TextArea rows={3} />
@@ -800,7 +963,7 @@ function RegistrationModal({
     <Modal
       title={trial ? `${trial.title} · 报名名单` : '报名名单'}
       open={Boolean(trial)}
-      width={680}
+      width={1080}
       footer={null}
       onCancel={onClose}
     >
@@ -809,31 +972,72 @@ function RegistrationModal({
         error={registrations.error}
         empty={registrations.data?.items.length === 0}
       >
-        <Table
+        <Table<AdmissionTrialRegistration>
           rowKey="id"
           dataSource={registrations.data?.items ?? []}
           pagination={false}
+          scroll={{ x: 980 }}
           columns={[
-            { title: '线索 ID', dataIndex: 'leadId' },
             {
-              title: '状态',
+              title: '学员 / 家长',
+              width: 180,
+              render: (_, item) => (
+                <Space direction="vertical" size={0}>
+                  <Typography.Text strong>{item.studentNameSnapshot ?? '未记录'}</Typography.Text>
+                  <Typography.Text type="secondary">
+                    {item.guardianNameSnapshot ?? '未记录'} · {item.phoneSnapshot ?? '—'}
+                  </Typography.Text>
+                </Space>
+              ),
+            },
+            {
+              title: '预约状态',
               dataIndex: 'status',
-              render: (value: string) => (
-                <Tag>
-                  {value === 'checked_in'
-                    ? '已签到'
-                    : value === 'cancelled'
-                      ? '已取消'
-                      : value === 'no_show'
-                        ? '未到场'
-                        : '已预约'}
-                </Tag>
+              width: 110,
+              render: (value: AdmissionTrialRegistration['status']) => (
+                <Tag color={registrationStatus[value].color}>{registrationStatus[value].label}</Tag>
+              ),
+            },
+            {
+              title: '占位费',
+              width: 130,
+              render: (_, item) => (
+                <Space direction="vertical" size={0}>
+                  <Typography.Text>{moneyMinor(item.amountMinor)}</Typography.Text>
+                  <Tag color={paymentStatus[item.paymentStatus].color}>
+                    {paymentStatus[item.paymentStatus].label}
+                  </Tag>
+                </Space>
+              ),
+            },
+            {
+              title: '订单 / 收据',
+              width: 220,
+              render: (_, item) => (
+                <Space direction="vertical" size={0}>
+                  <Typography.Text copyable={Boolean(item.orderNo)}>
+                    {item.orderNo ?? '免费预约，无订单'}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">{item.receiptNo ?? '—'}</Typography.Text>
+                </Space>
+              ),
+            },
+            {
+              title: '支付 / 过期时间',
+              width: 190,
+              render: (_, item) => (
+                <Space direction="vertical" size={0}>
+                  <span>支付：{displayDate(item.paidAt)}</span>
+                  <Typography.Text type="secondary">
+                    保留至：{displayDate(item.expiresAt)}
+                  </Typography.Text>
+                </Space>
               ),
             },
             { title: '签到时间', dataIndex: 'checkedInAt', render: displayDate },
             {
               title: '操作',
-              render: (_, item: { leadId: string; status: string }) => (
+              render: (_, item) => (
                 <Button
                   type="link"
                   icon={<CheckCircleOutlined />}

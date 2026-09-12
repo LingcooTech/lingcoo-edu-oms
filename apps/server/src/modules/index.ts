@@ -79,7 +79,11 @@ import {
   createNotionConnectionTester,
 } from './content-sources/public.js';
 import { createContentModule, createContentService } from './content/public.js';
-import { createAdmissionsModule, createAdmissionsService } from './admissions/public.js';
+import {
+  createAdmissionsModule,
+  createAdmissionsService,
+  type AdmissionsService,
+} from './admissions/public.js';
 import {
   createLessonCommerceModule,
   createLessonCommerceService,
@@ -148,18 +152,19 @@ export async function registerApplicationModules(
     audit,
   });
   const lessonCommerceRef: { current: LessonCommerceService | null } = { current: null };
+  const admissionsRef: { current: AdmissionsService | null } = { current: null };
   const paymentFacts: PaymentFactReceiver = {
-    receive(fact) {
-      if (!lessonCommerceRef.current) {
-        throw new Error('Lesson commerce payment facts are not ready');
-      }
-      return lessonCommerceRef.current.receive(fact);
+    async receive(fact) {
+      if (!lessonCommerceRef.current || !admissionsRef.current)
+        throw new Error('Business payment facts are not ready');
+      await lessonCommerceRef.current.receive(fact);
+      await admissionsRef.current.receive(fact);
     },
-    assertRefundAllowed(request) {
-      if (!lessonCommerceRef.current) {
-        throw new Error('Lesson commerce refund policy is not ready');
-      }
-      return lessonCommerceRef.current.assertRefundAllowed(request);
+    async assertRefundAllowed(request) {
+      if (!lessonCommerceRef.current || !admissionsRef.current)
+        throw new Error('Business refund policies are not ready');
+      await lessonCommerceRef.current.assertRefundAllowed(request);
+      await admissionsRef.current.assertRefundAllowed(request);
     },
   };
   const payments = createPaymentsService({
@@ -204,8 +209,12 @@ export async function registerApplicationModules(
     database: dependencies.database,
     institutions: organization,
     people,
+    payments,
+    payers: wechatMiniAuth,
+    idempotency,
     audit,
   });
+  admissionsRef.current = admissions;
   const lessonProducts = createLessonProductsService({
     database: dependencies.database,
     institutions: organization,
@@ -305,6 +314,9 @@ export async function registerApplicationModules(
       database: dependencies.database,
       institutions: organization,
       people,
+      payments,
+      payers: wechatMiniAuth,
+      idempotency,
       audit,
       service: admissions,
     }),

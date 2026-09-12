@@ -7,6 +7,7 @@ import {
   admissionTrialPageSchema,
   admissionTrialRegistrationSchema,
   admissionTrialRegistrationListSchema,
+  admissionTrialReservationReceiptSchema,
   admissionTrialSessionSchema,
   bookAdmissionTrialRequestSchema,
   checkInAdmissionTrialRequestSchema,
@@ -14,6 +15,8 @@ import {
   createAdmissionFollowUpRequestSchema,
   createAdmissionLeadRequestSchema,
   createAdmissionTrialRequestSchema,
+  createMiniAdmissionTrialReservationRequestSchema,
+  miniAdmissionTrialReservationCheckoutSchema,
   updateAdmissionLeadRequestSchema,
   updateAdmissionTrialRequestSchema,
   type AdmissionLeadListQuery,
@@ -24,6 +27,7 @@ import {
   type CreateAdmissionFollowUpRequest,
   type CreateAdmissionLeadRequest,
   type CreateAdmissionTrialRequest,
+  type CreateMiniAdmissionTrialReservationRequest,
   type UpdateAdmissionLeadRequest,
   type UpdateAdmissionTrialRequest,
 } from '@lingcoo-edu-oms/contracts';
@@ -51,6 +55,10 @@ function leadPath(leadId: string): string {
 
 function trialPath(trialId: string): string {
   return `/api/admissions/trials/${pathId(trialId)}`;
+}
+
+function miniRegistrationPath(registrationId: string): string {
+  return `/api/mini/admissions/trial-reservations/${pathId(registrationId)}`;
 }
 
 export function createAdmissionsApi(client: ApiClient) {
@@ -124,6 +132,45 @@ export function createAdmissionsApi(client: ApiClient) {
       return client.request({
         path: `/api/admissions/trials${queryString(query)}`,
         schema: admissionTrialPageSchema,
+      });
+    },
+    listMiniTrials(input: Partial<AdmissionTrialListQuery> = {}) {
+      const query = admissionTrialListQuerySchema.parse(input);
+      return client.request({
+        path: `/api/mini/admissions/trials${queryString(query)}`,
+        schema: admissionTrialPageSchema,
+      });
+    },
+    createMiniTrialReservation(
+      trialId: string,
+      input: CreateMiniAdmissionTrialReservationRequest,
+      idempotencyKey: string,
+    ) {
+      return client.request({
+        method: 'POST',
+        path: `/api/mini/admissions/trials/${pathId(trialId)}/reservations`,
+        headers: { 'idempotency-key': idempotencyKey },
+        body: createMiniAdmissionTrialReservationRequestSchema.parse(input),
+        schema: miniAdmissionTrialReservationCheckoutSchema,
+      });
+    },
+    getMiniTrialReservation(registrationId: string) {
+      return client.request({
+        path: miniRegistrationPath(registrationId),
+        schema: admissionTrialRegistrationSchema,
+      });
+    },
+    syncMiniTrialReservation(registrationId: string) {
+      return client.request({
+        method: 'POST',
+        path: `${miniRegistrationPath(registrationId)}/actions/sync`,
+        schema: admissionTrialRegistrationSchema,
+      });
+    },
+    getMiniTrialReservationReceipt(registrationId: string) {
+      return client.request({
+        path: `${miniRegistrationPath(registrationId)}/receipt`,
+        schema: admissionTrialReservationReceiptSchema,
       });
     },
     createTrial(input: CreateAdmissionTrialRequest) {

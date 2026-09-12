@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, ilike, or, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, ilike, inArray, lte, or, sql, type SQL } from 'drizzle-orm';
 import type {
   AdmissionLeadListQuery,
   AdmissionTrialListQuery,
@@ -38,6 +38,22 @@ type TrialUpdate = { expectedRevision: number } & Partial<
     | 'capacity'
     | 'bookedCount'
     | 'status'
+    | 'notes'
+    | 'reservationFeeAmountMinor'
+    | 'reservationHoldMinutes'
+    | 'reservationRefundCutoffHours'
+  >
+>;
+type RegistrationInsert = typeof admissionTrialRegistrations.$inferInsert;
+type RegistrationUpdate = Partial<
+  Pick<
+    AdmissionRegistrationRecord,
+    | 'status'
+    | 'paymentStatus'
+    | 'paymentIntentId'
+    | 'paidAt'
+    | 'checkedInAt'
+    | 'cancelledAt'
     | 'notes'
   >
 >;
@@ -125,11 +141,41 @@ export class AdmissionsRepository {
     return { items, total: totals[0]?.value ?? 0 };
   }
 
+  async listOpenFutureTrials(input: AdmissionTrialListQuery, now: Date) {
+    const filters: SQL[] = [
+      eq(admissionTrialSessions.status, 'open'),
+      gt(admissionTrialSessions.startsAt, now),
+    ];
+    if (input.institutionId)
+      filters.push(eq(admissionTrialSessions.institutionId, input.institutionId));
+    const where = and(...filters);
+    const [items, totals] = await Promise.all([
+      this.database.db
+        .select()
+        .from(admissionTrialSessions)
+        .where(where)
+        .orderBy(asc(admissionTrialSessions.startsAt), asc(admissionTrialSessions.id))
+        .limit(input.pageSize)
+        .offset((input.page - 1) * input.pageSize),
+      this.database.db.select({ value: count() }).from(admissionTrialSessions).where(where),
+    ]);
+    return { items, total: totals[0]?.value ?? 0 };
+  }
+
   async findTrial(id: string, executor: DatabaseExecutor = this.database.db) {
     const [record] = await executor
       .select()
       .from(admissionTrialSessions)
       .where(eq(admissionTrialSessions.id, id));
+    return record ?? null;
+  }
+
+  async lockTrial(id: string, executor: DatabaseTransaction) {
+    const [record] = await executor
+      .select()
+      .from(admissionTrialSessions)
+      .where(eq(admissionTrialSessions.id, id))
+      .for('update');
     return record ?? null;
   }
 
@@ -173,25 +219,105 @@ export class AdmissionsRepository {
     return record ?? null;
   }
 
-  async createRegistration(trialSessionId: string, leadId: string, executor: DatabaseTransaction) {
-    const [record] = await executor
-      .insert(admissionTrialRegistrations)
-      .values({ trialSessionId, leadId })
-      .returning();
+  async createRegistration(input: RegistrationInsert, executor: DatabaseTransaction) {
+    const [record] = await executor.insert(admissionTrialRegistrations).values(input).returning();
     return record!;
   }
 
-  async updateRegistration(
-    id: string,
-    changes: Partial<Pick<AdmissionRegistrationRecord, 'status' | 'checkedInAt' | 'notes'>>,
-    executor: DatabaseTransaction,
-  ) {
+  async updateRegistration(id: string, changes: RegistrationUpdate, executor: DatabaseTransaction) {
     const [record] = await executor
       .update(admissionTrialRegistrations)
-      .set(changes)
+      .set({
+        ...changes,
+        revision: sql`${admissionTrialRegistrations.revision} + 1`,
+        updatedAt: new Date(),
+      })
       .where(eq(admissionTrialRegistrations.id, id))
       .returning();
     return record ?? null;
+  }
+
+  async findRegistrationById(id: string, executor: DatabaseExecutor = this.database.db) {
+    const [record] = await executor
+      .select()
+      .from(admissionTrialRegistrations)
+      .where(eq(admissionTrialRegistrations.id, id));
+    return record ?? null;
+  }
+
+  async lockRegistrationById(id: string, executor: DatabaseTransaction) {
+    const [record] = await executor
+      .select()
+      .from(admissionTrialRegistrations)
+      .where(eq(admissionTrialRegistrations.id, id))
+      .for('update');
+    return record ?? null;
+  }
+
+  async findRegistrationByOrderNo(orderNo: string, executor: DatabaseExecutor = this.database.db) {
+    const [record] = await executor
+      .select()
+      .from(admissionTrialRegistrations)
+      .where(eq(admissionTrialRegistrations.orderNo, orderNo));
+    return record ?? null;
+  }
+
+  async findOwnedActiveRegistration(
+    trialSessionId: string,
+    payerIdentityUserId: string,
+    studentName: string,
+    executor: DatabaseExecutor = this.database.db,
+  ) {
+    const [record] = await executor
+      .select()
+      .from(admissionTrialRegistrations)
+      .where(
+        and(
+          eq(admissionTrialRegistrations.trialSessionId, trialSessionId),
+          eq(admissionTrialRegistrations.payerIdentityUserId, payerIdentityUserId),
+          eq(admissionTrialRegistrations.studentNameSnapshot, studentName),
+          inArray(admissionTrialRegistrations.status, ['pending_payment', 'booked', 'checked_in']),
+        ),
+      );
+    return record ?? null;
+  }
+
+  async attachPaymentIntent(id: string, paymentIntentId: string, executor: DatabaseTransaction) {
+    const [record] = await executor
+      .update(admissionTrialRegistrations)
+      .set({
+        paymentIntentId,
+        revision: sql`${admissionTrialRegistrations.revision} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(admissionTrialRegistrations.id, id),
+          eq(admissionTrialRegistrations.status, 'pending_payment'),
+          sql`${admissionTrialRegistrations.paymentIntentId} is null`,
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async expirePendingForTrial(trialSessionId: string, now: Date, executor: DatabaseTransaction) {
+    return executor
+      .update(admissionTrialRegistrations)
+      .set({
+        status: 'expired',
+        paymentStatus: 'closed',
+        revision: sql`${admissionTrialRegistrations.revision} + 1`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(admissionTrialRegistrations.trialSessionId, trialSessionId),
+          eq(admissionTrialRegistrations.status, 'pending_payment'),
+          lte(admissionTrialRegistrations.expiresAt, now),
+        ),
+      )
+      .returning();
   }
 
   async registrationsForTrial(trialSessionId: string) {
