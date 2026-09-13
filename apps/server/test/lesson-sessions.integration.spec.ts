@@ -647,6 +647,7 @@ suite('P4 lesson session attendance and consumption', () => {
         {
           session: { id: assignedSessionId, status: 'open' },
           attendance: { total: 2, pending: 2 },
+          consumption: { notConsumed: 2, consumed: 0, reversed: 0, failed: 0, consumedUnits: 0 },
           teachers: [{ teacherId }],
         },
       ],

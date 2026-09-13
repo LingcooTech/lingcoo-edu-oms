@@ -47,6 +47,7 @@ import {
   Typography,
 } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { AsyncState } from '../../components/AsyncState';
 import { PageContainer } from '../../components/PageContainer';
@@ -192,6 +193,7 @@ function newOperationId(): string {
 }
 
 export function LessonSessionsPage({ mode = 'sessions' }: { mode?: PageMode }) {
+  const [searchParams] = useSearchParams();
   const { message, modal } = App.useApp();
   const canManageSessions = useCan('education.sessions.manage');
   const canReadAttendance = useCan('education.attendance.read');
@@ -202,8 +204,12 @@ export function LessonSessionsPage({ mode = 'sessions' }: { mode?: PageMode }) {
   ]);
   const organization = useOrganizationProfile();
   const institutions = useInstitutions({ page: 1, pageSize: 100, status: 'active' });
-  const [institutionId, setInstitutionId] = useState<string | null>(null);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [institutionId, setInstitutionId] = useState<string | null>(() =>
+    searchParams.get('institutionId'),
+  );
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(() =>
+    searchParams.get('sessionId'),
+  );
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<LessonSessionStatus | undefined>(
     mode === 'attendance' ? 'open' : undefined,

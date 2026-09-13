@@ -266,6 +266,15 @@ export class LessonSessionsService implements LessonSessionSchedulingPort {
                 absent: attendance.absent,
               }
             : { total: 0, pending: 0, present: 0, late: 0, leave: 0, absent: 0 },
+          consumption: attendance
+            ? {
+                notConsumed: attendance.notConsumed,
+                consumed: attendance.consumed,
+                reversed: attendance.reversed,
+                failed: attendance.failed,
+                consumedUnits: attendance.consumedUnits,
+              }
+            : { notConsumed: 0, consumed: 0, reversed: 0, failed: 0, consumedUnits: 0 },
         };
       }),
       page: input.page,

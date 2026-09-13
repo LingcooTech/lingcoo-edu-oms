@@ -141,6 +141,11 @@ const LessonSessionsPage = lazy(() =>
     default: module.LessonSessionsPage,
   })),
 );
+const AcademicWorkbenchPage = lazy(() =>
+  import('../features/sessions/AcademicWorkbenchPage').then((module) => ({
+    default: module.AcademicWorkbenchPage,
+  })),
+);
 const AdmissionsPage = lazy(() =>
   import('../features/admissions/AdmissionsPage').then((module) => ({
     default: module.AdmissionsPage,
@@ -207,6 +212,7 @@ export function AppRouter() {
               <Route path="classes" element={<TeachingResourcesPage initialTab="classes" />} />
             </Route>
             <Route element={<RequirePermission permissions={['education.sessions.read']} />}>
+              <Route path="academic-workbench" element={<AcademicWorkbenchPage />} />
               <Route path="schedule-plans" element={<SchedulePlansPage />} />
             </Route>
             <Route element={<RequirePermission permissions={['education.sessions.read']} />}>

@@ -63,6 +63,17 @@ export function useLessonSessions(
   });
 }
 
+export function useLessonSessionWorkbench(
+  institutionId: string | null,
+  query: Partial<LessonSessionListQuery>,
+) {
+  return useQuery({
+    queryKey: lessonSessionKeys.workbench(institutionId ?? '', query),
+    queryFn: () => lessonSessionsApi.workbench(institutionId!, query),
+    enabled: Boolean(institutionId),
+  });
+}
+
 export function useLessonSession(institutionId: string | null, sessionId: string | null) {
   return useQuery({
     queryKey: lessonSessionKeys.detail(institutionId ?? '', sessionId ?? ''),

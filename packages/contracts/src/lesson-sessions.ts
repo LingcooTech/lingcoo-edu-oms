@@ -65,6 +65,7 @@ export const lessonSessionSchema = z.object({
 
 export const lessonSessionListQuerySchema = pageQuerySchema
   .extend({
+    pageSize: z.coerce.number().int().min(1).max(500).default(20),
     institutionId: idSchema.optional(),
     search: z.string().trim().min(1).max(160).optional(),
     status: lessonSessionStatusSchema.optional(),
@@ -183,10 +184,19 @@ export const lessonSessionAttendanceSummarySchema = z.object({
   absent: z.number().int().nonnegative(),
 });
 
+export const lessonSessionConsumptionSummarySchema = z.object({
+  notConsumed: z.number().int().nonnegative(),
+  consumed: z.number().int().nonnegative(),
+  reversed: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  consumedUnits: z.number().int().nonnegative(),
+});
+
 export const lessonSessionWorkItemSchema = z.object({
   session: lessonSessionSchema,
   teachers: z.array(lessonSessionTeacherAssignmentSchema),
   attendance: lessonSessionAttendanceSummarySchema,
+  consumption: lessonSessionConsumptionSummarySchema,
 });
 export const lessonSessionWorkPageSchema = pagedResponseSchema(lessonSessionWorkItemSchema);
 
@@ -326,6 +336,7 @@ export type ReplaceLessonSessionTeachersRequest = z.infer<
   typeof replaceLessonSessionTeachersRequestSchema
 >;
 export type LessonSessionAttendanceSummary = z.infer<typeof lessonSessionAttendanceSummarySchema>;
+export type LessonSessionConsumptionSummary = z.infer<typeof lessonSessionConsumptionSummarySchema>;
 export type LessonSessionWorkItem = z.infer<typeof lessonSessionWorkItemSchema>;
 export type AddLessonSessionStudentRequest = z.infer<typeof addLessonSessionStudentRequestSchema>;
 export type AddLessonSessionStudentsRequest = z.infer<typeof addLessonSessionStudentsRequestSchema>;

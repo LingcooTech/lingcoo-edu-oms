@@ -343,6 +343,13 @@ describe('P4 lesson sessions api client', () => {
               session,
               teachers: [assignment],
               attendance: { total: 2, pending: 1, present: 1, late: 0, leave: 0, absent: 0 },
+              consumption: {
+                notConsumed: 1,
+                consumed: 1,
+                reversed: 0,
+                failed: 0,
+                consumedUnits: 2,
+              },
             },
           ],
           page: 1,

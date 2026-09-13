@@ -391,6 +391,11 @@ export class LessonSessionsRepository {
           late: sql<number>`count(*) filter (where ${teachingSessionAttendances.attendanceStatus} = 'late')::int`,
           leave: sql<number>`count(*) filter (where ${teachingSessionAttendances.attendanceStatus} = 'leave')::int`,
           absent: sql<number>`count(*) filter (where ${teachingSessionAttendances.attendanceStatus} = 'absent')::int`,
+          notConsumed: sql<number>`count(*) filter (where ${teachingSessionAttendances.consumptionStatus} = 'not_consumed')::int`,
+          consumed: sql<number>`count(*) filter (where ${teachingSessionAttendances.consumptionStatus} = 'consumed')::int`,
+          reversed: sql<number>`count(*) filter (where ${teachingSessionAttendances.consumptionStatus} = 'reversed')::int`,
+          failed: sql<number>`count(*) filter (where ${teachingSessionAttendances.consumptionStatus} = 'failed')::int`,
+          consumedUnits: sql<number>`coalesce(sum(${teachingSessionAttendances.consumedUnits}) filter (where ${teachingSessionAttendances.consumptionStatus} = 'consumed'), 0)::int`,
         })
         .from(teachingSessionAttendances)
         .where(inArray(teachingSessionAttendances.sessionId, sessionIds))

@@ -140,6 +140,14 @@ export const foundationNavigation: AdminNavigationItem[] = [
     section: 'admissions',
   },
   {
+    key: 'academic-workbench',
+    label: '教务工作台',
+    path: '/academic-workbench',
+    icon: <CalendarOutlined />,
+    permission: 'education.sessions.read',
+    section: 'academic',
+  },
+  {
     key: 'students',
     label: '学员档案',
     path: '/students',
