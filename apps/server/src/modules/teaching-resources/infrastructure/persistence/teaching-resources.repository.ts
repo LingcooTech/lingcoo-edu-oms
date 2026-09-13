@@ -1,4 +1,16 @@
-import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  lte,
+  or,
+  type SQL,
+} from 'drizzle-orm';
 import type {
   CampusListQuery,
   ClassGroupListQuery,
@@ -334,6 +346,26 @@ export class TeachingResourcesRepository {
       executor.select({ value: count() }).from(teachingResourceClassMemberships).where(where),
     ]);
     return { items, total: total[0]?.value ?? 0 };
+  }
+
+  async listStudentClassMemberships(institutionId: string, studentId: string) {
+    return this.database.db
+      .select({
+        classGroup: teachingResourceClassGroups,
+        membership: teachingResourceClassMemberships,
+      })
+      .from(teachingResourceClassMemberships)
+      .innerJoin(
+        teachingResourceClassGroups,
+        eq(teachingResourceClassGroups.id, teachingResourceClassMemberships.classGroupId),
+      )
+      .where(
+        and(
+          eq(teachingResourceClassMemberships.institutionId, institutionId),
+          eq(teachingResourceClassMemberships.studentId, studentId),
+        ),
+      )
+      .orderBy(desc(teachingResourceClassMemberships.joinedAt));
   }
 
   async replaceClassMemberships(

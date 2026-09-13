@@ -1669,6 +1669,68 @@ body {
   text-align: right;
 }
 
+.student-360-hero {
+  margin-bottom: 12px;
+}
+
+.student-360-hero .ant-card-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.student-360-hero__identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+}
+
+.student-360-hero__identity h3.ant-typography {
+  margin: 0;
+}
+
+.student-360-avatar {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  flex: 0 0 54px;
+  place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(145deg, var(--ant-color-primary, #1677ff), #7c3aed);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 750;
+}
+
+.student-360-metrics {
+  margin-bottom: 12px;
+}
+
+.student-360-metrics .ant-card-body {
+  padding: 15px;
+}
+
+.student-360-metrics .ant-statistic-title {
+  font-size: 12px;
+}
+
+.student-360-metrics .ant-statistic-content {
+  font-size: 21px;
+}
+
+.student-360-tabs-card .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+
+@media (max-width: 767px) {
+  .student-360-hero .ant-card-body {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 :root[data-theme='dark'] .academic-calendar-weekdays,
 :root[data-theme='dark'] .academic-calendar-day.is-outside {
   background: rgba(255, 255, 255, 0.025);

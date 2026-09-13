@@ -76,6 +76,21 @@ export class LessonSessionsRepository {
     return { items, total: total[0]?.value ?? 0 };
   }
 
+  async listStudentDeliveries(institutionId: string, studentId: string, limit = 50) {
+    return this.database.db
+      .select({ session: teachingSessions, attendance: teachingSessionAttendances })
+      .from(teachingSessionAttendances)
+      .innerJoin(teachingSessions, eq(teachingSessions.id, teachingSessionAttendances.sessionId))
+      .where(
+        and(
+          eq(teachingSessions.institutionId, institutionId),
+          eq(teachingSessionAttendances.studentId, studentId),
+        ),
+      )
+      .orderBy(desc(teachingSessions.startsAt), desc(teachingSessions.id))
+      .limit(limit);
+  }
+
   async find(
     institutionId: string,
     sessionId: string,

@@ -18,6 +18,7 @@ export * from './lesson-packages.js';
 export * from './lesson-accounts.js';
 export * from './lesson-commerce.js';
 export * from './lesson-sessions.js';
+export * from './student-360.js';
 export * from './teaching-resources.js';
 export * from './content.js';
 export * from './admissions.js';

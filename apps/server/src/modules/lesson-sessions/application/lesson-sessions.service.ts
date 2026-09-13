@@ -14,6 +14,7 @@ import {
   type LessonSessionListQuery,
   type LessonSessionRosterEntry,
   type LessonSessionTeacherAssignment,
+  type Student360Delivery,
   type ReplaceLessonSessionTeachersRequest,
   type OpenLessonSessionRequest,
   type RecordLessonSessionAttendanceRequest,
@@ -281,6 +282,31 @@ export class LessonSessionsService implements LessonSessionSchedulingPort {
       pageSize: input.pageSize,
       total: result.total,
     };
+  }
+
+  async listStudentDeliveries(
+    institutionId: string,
+    studentId: string,
+    scope: EducationDataScope,
+    limit = 50,
+  ): Promise<Student360Delivery[]> {
+    this.assertInstitutionId(institutionId, scope);
+    await this.students.assertStudentAccess(studentId, scope, this.database.db);
+    const rows = await this.repository.listStudentDeliveries(institutionId, studentId, limit);
+    const evidence = await this.repository.workbenchEvidence(rows.map((row) => row.session.id));
+    const teachersBySession = new Map<string, LessonSessionTeacherRecord[]>();
+    for (const assignment of evidence.teachers) {
+      const items = teachersBySession.get(assignment.sessionId) ?? [];
+      items.push(assignment);
+      teachersBySession.set(assignment.sessionId, items);
+    }
+    return rows.map((row) => ({
+      session: this.sessionView(row.session),
+      attendance: this.rosterView(row.attendance),
+      teachers: (teachersBySession.get(row.session.id) ?? []).map((assignment) =>
+        this.teacherAssignmentView(assignment),
+      ),
+    }));
   }
 
   async listTeachers(institutionId: string, sessionId: string, scope: EducationDataScope) {

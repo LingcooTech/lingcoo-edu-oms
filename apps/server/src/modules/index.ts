@@ -89,6 +89,7 @@ import {
   createLessonCommerceService,
   type LessonCommerceService,
 } from './lesson-commerce/public.js';
+import { createStudent360Module, createStudent360Service } from './student-360/public.js';
 
 export interface ApplicationModuleDependencies {
   environment: AppEnvironment;
@@ -274,6 +275,15 @@ export async function registerApplicationModules(
     sessions: lessonSessions,
     audit,
   });
+  const student360 = createStudent360Service({
+    organization,
+    people,
+    lessonAccounts,
+    lessonCommerce,
+    periodCards,
+    lessonSessions,
+    teachingResources,
+  });
   lessonSessions.setResourceConflictPolicy(teachingResources);
   const access = createAccessControlService({
     database: dependencies.database,
@@ -408,6 +418,18 @@ export async function registerApplicationModules(
       sessions: lessonSessions,
       audit,
       service: teachingResources,
+    }),
+  );
+  await app.register(
+    createStudent360Module({
+      organization,
+      people,
+      lessonAccounts,
+      lessonCommerce,
+      periodCards,
+      lessonSessions,
+      teachingResources,
+      service: student360,
     }),
   );
   await app.register(createAuditModule({ database: dependencies.database, service: audit }));

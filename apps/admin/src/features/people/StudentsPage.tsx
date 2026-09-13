@@ -4,6 +4,7 @@ import {
   SearchOutlined,
   TeamOutlined,
   UserAddOutlined,
+  ContactsOutlined,
 } from '@ant-design/icons';
 import type {
   CreateGuardianAndBindRequest,
@@ -32,7 +33,7 @@ import {
   Typography,
 } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { AsyncState } from '../../components/AsyncState';
 import { PageContainer } from '../../components/PageContainer';
@@ -90,6 +91,7 @@ function errorMessage(error: unknown): string {
 }
 
 export function StudentsPage() {
+  const navigate = useNavigate();
   const { message } = App.useApp();
   const [searchParams, setSearchParams] = useSearchParams();
   const canManageStudents = useCan('education.students.manage');
@@ -245,7 +247,7 @@ export function StudentsPage() {
                 {
                   title: '学员',
                   dataIndex: 'fullName',
-                  width: 190,
+                  width: 260,
                   render: (name: string, record) => (
                     <Space direction="vertical" size={0}>
                       <Typography.Text strong>{name}</Typography.Text>
@@ -283,6 +285,15 @@ export function StudentsPage() {
                   width: 190,
                   render: (_, record) => (
                     <Space onClick={(event) => event.stopPropagation()}>
+                      <Button
+                        type="link"
+                        icon={<ContactsOutlined />}
+                        onClick={() =>
+                          navigate(`/students/${record.id}/360?institutionId=${institutionId}`)
+                        }
+                      >
+                        360°
+                      </Button>
                       <Button
                         type="link"
                         icon={<TeamOutlined />}

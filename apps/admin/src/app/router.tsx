@@ -103,6 +103,11 @@ const StudentsPage = lazy(() =>
     default: module.StudentsPage,
   })),
 );
+const Student360Page = lazy(() =>
+  import('../features/people/Student360Page').then((module) => ({
+    default: module.Student360Page,
+  })),
+);
 const TeachersPage = lazy(() =>
   import('../features/people/TeachersPage').then((module) => ({
     default: module.TeachersPage,
@@ -184,6 +189,7 @@ export function AppRouter() {
             </Route>
             <Route element={<RequirePermission permissions={['education.students.read']} />}>
               <Route path="students" element={<StudentsPage />} />
+              <Route path="students/:studentId/360" element={<Student360Page />} />
             </Route>
             <Route element={<RequirePermission permissions={['education.leads.read']} />}>
               <Route path="admissions/leads" element={<AdmissionsPage initialTab="leads" />} />

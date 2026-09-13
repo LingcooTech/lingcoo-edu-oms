@@ -10,7 +10,7 @@ import type {
   UpdateTeacherRequest,
 } from '@lingcoo-edu-oms/contracts';
 
-import { peopleApi } from './api';
+import { peopleApi, student360Api } from './api';
 
 const peopleKeys = {
   all: ['education', 'people'] as const,
@@ -21,6 +21,8 @@ const peopleKeys = {
   guardians: (institutionId: string, studentId: string) =>
     [...peopleKeys.all, 'guardians', institutionId, studentId] as const,
   teachers: (institutionId: string) => [...peopleKeys.all, 'teachers', institutionId] as const,
+  student360: (institutionId: string, studentId: string) =>
+    [...peopleKeys.all, 'student-360', institutionId, studentId] as const,
 };
 
 export function useStudents(institutionId: string | null, query: Partial<StudentListQuery>) {
@@ -35,6 +37,14 @@ export function useStudent(institutionId: string | null, studentId: string | nul
   return useQuery({
     queryKey: peopleKeys.student(institutionId ?? '', studentId ?? ''),
     queryFn: () => peopleApi.getStudent(institutionId!, studentId!),
+    enabled: Boolean(institutionId && studentId),
+  });
+}
+
+export function useStudent360(institutionId: string | null, studentId: string | null) {
+  return useQuery({
+    queryKey: peopleKeys.student360(institutionId ?? '', studentId ?? ''),
+    queryFn: () => student360Api.get(institutionId!, studentId!),
     enabled: Boolean(institutionId && studentId),
   });
 }

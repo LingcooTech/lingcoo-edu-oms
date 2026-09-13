@@ -5,6 +5,7 @@ import type {
   ClassGroup,
   ClassGroupListQuery,
   ClassMembership,
+  EducationDataScope,
   Classroom,
   ClassroomListQuery,
   Course,
@@ -29,6 +30,7 @@ import type {
   UpdateCourseRequest,
   UpdateScheduleRequest,
   UpdateSessionResourceContextRequest,
+  Student360ClassMembership,
 } from '@lingcoo-edu-oms/contracts';
 
 import type {
@@ -254,6 +256,19 @@ export class TeachingResourcesService implements LessonSessionResourceConflictPo
       pageSize,
       total: result.total,
     };
+  }
+
+  async listStudentClassMemberships(
+    institutionId: string,
+    studentId: string,
+    scope: EducationDataScope,
+  ): Promise<Student360ClassMembership[]> {
+    await this.students.assertStudentAccess(studentId, scope, this.database.db);
+    const rows = await this.repository.listStudentClassMemberships(institutionId, studentId);
+    return rows.map((row) => ({
+      classGroup: this.classGroupView(row.classGroup),
+      membership: this.membershipView(row.membership),
+    }));
   }
 
   async replaceClassMemberships(
