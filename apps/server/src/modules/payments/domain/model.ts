@@ -57,6 +57,7 @@ export interface PaymentProviderAdapter {
     currency: string;
     reason: string;
   }): Promise<PaymentProviderRefundResult>;
+  queryRefund(refundId: string): Promise<PaymentProviderRefundResult>;
   verifyCallback(
     input: unknown,
     signature: string | undefined,

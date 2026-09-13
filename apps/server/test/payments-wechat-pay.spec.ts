@@ -155,11 +155,16 @@ describe('WeChat Pay APIv3 provider', () => {
         reason: '测试退款',
       }),
     ).resolves.toMatchObject({ providerRefundId: 'wx-refund-1', status: 'succeeded' });
+    await expect(provider.queryRefund('refund-1')).resolves.toMatchObject({
+      providerRefundId: 'wx-refund-1',
+      status: 'succeeded',
+    });
 
     expect(requests.map((item) => item.path)).toEqual([
       '/v3/pay/transactions/out-trade-no/order-1?mchid=1900000109',
       '/v3/pay/transactions/out-trade-no/order-1/close',
       '/v3/refund/domestic/refunds',
+      '/v3/refund/domestic/refunds/refund-1',
     ]);
     expect(JSON.parse(requests[2]!.body)).toMatchObject({
       out_trade_no: 'order-1',

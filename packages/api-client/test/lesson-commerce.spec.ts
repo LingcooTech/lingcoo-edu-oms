@@ -73,7 +73,7 @@ describe('lesson commerce API client', () => {
     ).toMatchObject({ productType: 'period_card', periodCardProductId });
   });
 
-  it('lists institution orders and requests a grant retry with CSRF', async () => {
+  it('lists institution orders and requests grant retry and refund with CSRF', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>();
     fetch
       .mockResolvedValueOnce(Response.json({ items: [order()], page: 1, pageSize: 20, total: 1 }))
@@ -86,6 +86,17 @@ describe('lesson commerce API client', () => {
           grantMovementId: '77777777-7777-4777-8777-777777777777',
           completedAt: '2026-09-11T08:07:00.000Z',
         }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          ...order(),
+          status: 'refunded',
+          failureCode: null,
+          failureMessage: null,
+          grantMovementId: '77777777-7777-4777-8777-777777777777',
+          completedAt: null,
+          revision: 5,
+        }),
       );
     const api = createLessonCommerceApi(
       createApiClient({ fetch, getCsrfToken: () => 'csrf-token' }),
@@ -94,6 +105,10 @@ describe('lesson commerce API client', () => {
 
     await api.list(institutionId, { productType: 'period_card', status: 'grant_failed' });
     await api.retryGrant(institutionId, order().id);
+    await api.refund(institutionId, order().id, {
+      expectedRevision: 4,
+      reason: '家长申请退款',
+    });
 
     expect(fetch.mock.calls[0]?.[0]).toContain(
       `/api/institutions/${institutionId}/orders?page=1&pageSize=20&productType=period_card&status=grant_failed`,
@@ -101,6 +116,13 @@ describe('lesson commerce API client', () => {
     const retry = fetch.mock.calls[1];
     expect(retry?.[0]).toContain(`/orders/${order().id}/actions/retry-grant`);
     expect(new Headers(retry?.[1]?.headers).get('x-csrf-token')).toBe('csrf-token');
+    const refund = fetch.mock.calls[2];
+    expect(refund?.[0]).toContain(`/orders/${order().id}/actions/refund`);
+    expect(new Headers(refund?.[1]?.headers).get('x-csrf-token')).toBe('csrf-token');
+    expect(JSON.parse(String(refund?.[1]?.body))).toEqual({
+      expectedRevision: 4,
+      reason: '家长申请退款',
+    });
   });
 
   it('creates an offline order idempotently and loads its receipt', async () => {

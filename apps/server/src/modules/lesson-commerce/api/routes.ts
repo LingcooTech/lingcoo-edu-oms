@@ -7,6 +7,7 @@ import {
   lessonOrderListQuerySchema,
   miniStudentListQuerySchema,
   retryLessonOrderGrantRequestSchema,
+  refundLessonOrderRequestSchema,
 } from '@lingcoo-edu-oms/contracts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -136,6 +137,30 @@ export async function registerLessonCommerceRoutes(
       parse(retryLessonOrderGrantRequestSchema, request.body ?? {});
       const params = parse(institutionParamsSchema.extend({ orderId: z.uuid() }), request.params);
       return service.retryGrant(params.institutionId, params.orderId, actorWithId(request));
+    },
+  );
+  app.post(
+    '/api/institutions/:institutionId/orders/:orderId/actions/refund',
+    {
+      config: {
+        access: {
+          permissions: [
+            'education.orders.manage',
+            'education.lesson-balances.manage',
+            'education.lesson-packages.manage',
+          ],
+          education: { institutionParam: 'institutionId', permission: 'education.orders.manage' },
+        },
+      },
+    },
+    async (request) => {
+      const params = parse(institutionParamsSchema.extend({ orderId: z.uuid() }), request.params);
+      return service.refundOrder(
+        params.institutionId,
+        params.orderId,
+        parse(refundLessonOrderRequestSchema, request.body),
+        actorWithId(request),
+      );
     },
   );
 }

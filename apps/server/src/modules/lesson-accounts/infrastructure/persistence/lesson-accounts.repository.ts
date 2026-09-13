@@ -118,6 +118,22 @@ export class LessonAccountsRepository {
     return record ?? null;
   }
 
+  async findBatchByOriginMovementForUpdate(
+    accountId: string,
+    movementId: string,
+    executor: DatabaseTransaction,
+  ) {
+    const [record] = await executor
+      .select()
+      .from(lessonBatches)
+      .where(
+        and(eq(lessonBatches.accountId, accountId), eq(lessonBatches.originMovementId, movementId)),
+      )
+      .for('update')
+      .limit(1);
+    return record ?? null;
+  }
+
   async lockAvailableBatches(accountId: string, executor: DatabaseTransaction) {
     return executor
       .select()

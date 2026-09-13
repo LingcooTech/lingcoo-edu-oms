@@ -81,6 +81,17 @@ export interface LessonPurchaseGrantLedger {
     input: LessonPurchaseGrantCommand,
     context: LessonMutationContext,
   ): Promise<LessonAccountMutationResult>;
+  refundPurchase(
+    input: {
+      institutionId: string;
+      studentId: string;
+      grantMovementId: string;
+      orderNo: string;
+      operationKey: string;
+      reason: string;
+    },
+    context: LessonMutationContext,
+  ): Promise<LessonAccountMutationResult>;
 }
 
 export interface LessonConsumptionLedger {
@@ -381,6 +392,73 @@ export class LessonAccountsService implements LessonConsumptionLedger, LessonPur
           },
           context,
           transaction,
+        );
+      },
+    );
+    return result.value as LessonAccountMutationResult;
+  }
+
+  async refundPurchase(
+    input: {
+      institutionId: string;
+      studentId: string;
+      grantMovementId: string;
+      orderNo: string;
+      operationKey: string;
+      reason: string;
+    },
+    context: LessonMutationContext,
+  ): Promise<LessonAccountMutationResult> {
+    const result = await this.idempotency.execute(
+      {
+        operation: 'lesson-account.refund-purchase',
+        resultSchema: reverseLessonGrantResultSchema,
+      },
+      {
+        scope: `lesson-account:${input.institutionId}:${input.studentId}`,
+        key: input.operationKey,
+        request: {
+          institutionId: input.institutionId,
+          studentId: input.studentId,
+          grantMovementId: input.grantMovementId,
+          orderNo: input.orderNo,
+        },
+        actorId: context.actorId,
+      },
+      async (transaction) => {
+        await this.assertParties(input.institutionId, input.studentId, transaction);
+        const { record: account } = await this.repository.lockOrCreateAccount(
+          input.institutionId,
+          input.studentId,
+          transaction,
+        );
+        const batch = await this.repository.findBatchByOriginMovementForUpdate(
+          account.id,
+          input.grantMovementId,
+          transaction,
+        );
+        if (!batch) throw new ApiError(404, 'LESSON_REFUND_BATCH_NOT_FOUND', '订单课时批次不存在');
+        if (
+          batch.status !== 'available' ||
+          batch.consumedUnits !== 0 ||
+          batch.withdrawnUnits !== 0 ||
+          batch.remainingUnits !== batch.totalUnits
+        ) {
+          throw new ApiError(
+            409,
+            'LESSON_ORDER_ENTITLEMENT_USED',
+            '订单课时已消费或回收，不能自动退款',
+          );
+        }
+        return this.debitLockedBatch(
+          account,
+          batch,
+          batch.totalUnits,
+          'grant_reversal',
+          input.reason,
+          context,
+          transaction,
+          'reversed',
         );
       },
     );

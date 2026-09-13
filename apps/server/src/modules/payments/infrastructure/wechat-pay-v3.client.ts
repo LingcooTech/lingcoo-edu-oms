@@ -155,6 +155,10 @@ export class WechatPayV3Client {
     });
   }
 
+  async queryRefund(refundId: string): Promise<WechatPayRefundResponse> {
+    return this.call('GET', `/v3/refund/domestic/refunds/${encodeURIComponent(refundId)}`);
+  }
+
   async call<T>(
     method: 'GET' | 'POST',
     path: string,

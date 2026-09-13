@@ -283,6 +283,22 @@ export class PaymentsService {
       amountMinor: input.amountMinor,
       reason: input.reason,
     });
+    return this.executeRefund(id, input, context);
+  }
+
+  async refundForBusinessWorkflow(
+    id: string,
+    input: CreatePaymentRefundRequest,
+    context: ActorContext,
+  ): Promise<PaymentRefund> {
+    return this.executeRefund(id, input, context);
+  }
+
+  private async executeRefund(
+    id: string,
+    input: CreatePaymentRefundRequest,
+    context: ActorContext,
+  ): Promise<PaymentRefund> {
     const reservation = await this.database.transaction(async (transaction) => {
       const intent = await this.requireLockedIntent(id, transaction);
       const duplicate = await this.repository.findRefundByRequest(
@@ -321,21 +337,32 @@ export class PaymentsService {
         throw new ApiError(409, 'PAYMENT_REFUND_IDEMPOTENCY_CONFLICT', '退款请求发生并发冲突');
       return created;
     });
-    if (reservation.status !== 'pending') return refundView(reservation);
+    if (reservation.status === 'succeeded' || reservation.status === 'failed') {
+      return refundView(reservation);
+    }
 
     const intent = await this.getIntentRecord(id);
     const transaction = await this.requireTransaction(id);
     try {
-      const result = await this.provider(intent.provider).refund({
-        providerTransactionId: transaction.providerTransactionId,
-        refundId: reservation.id,
-        amountMinor: reservation.amountMinor,
-        totalAmountMinor: intent.amountMinor,
-        currency: intent.currency,
-        reason: reservation.reason,
-      });
+      const result = reservation.providerRefundId
+        ? await this.provider(intent.provider).queryRefund(reservation.id)
+        : await this.provider(intent.provider).refund({
+            providerTransactionId: transaction.providerTransactionId,
+            refundId: reservation.id,
+            amountMinor: reservation.amountMinor,
+            totalAmountMinor: intent.amountMinor,
+            currency: intent.currency,
+            reason: reservation.reason,
+          });
       const saved = await this.database.transaction(async (databaseTransaction) => {
         const locked = await this.requireLockedIntent(id, databaseTransaction);
+        const latest = await this.repository.findRefundByRequest(
+          id,
+          reservation.requestKey,
+          databaseTransaction,
+        );
+        if (!latest) throw new Error('Payment refund disappeared');
+        if (latest.status === 'succeeded') return latest;
         const updated = await this.repository.setRefundResult(
           reservation.id,
           result.providerRefundId,

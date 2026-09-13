@@ -161,6 +161,14 @@ export class WechatPayV3ProviderAdapter implements PaymentProviderAdapter {
     };
   }
 
+  async queryRefund(refundId: string): Promise<PaymentProviderRefundResult> {
+    const response = await this.client.queryRefund(refundId);
+    return {
+      providerRefundId: response.refund_id ?? refundId,
+      status: refundStatus(response.status),
+    };
+  }
+
   async verifyCallback(
     _input: unknown,
     _signature: string | undefined,

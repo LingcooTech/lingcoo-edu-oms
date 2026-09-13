@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 import { ApiError } from '@lingcoo-tech/http';
 import {
@@ -9,6 +9,7 @@ import {
   type LessonOrderListQuery,
   type LessonReceipt,
   type MiniStudentListQuery,
+  type RefundLessonOrderRequest,
   type PaymentIntentDetail,
   type PaymentProvider,
 } from '@lingcoo-edu-oms/contracts';
@@ -360,6 +361,174 @@ export class LessonCommerceService implements PaymentFactReceiver {
     }
     await this.grant(order, context);
     return this.view(await this.requireOrder(order.id));
+  }
+
+  async refundOrder(
+    institutionId: string,
+    orderId: string,
+    input: RefundLessonOrderRequest,
+    context: ActorContext,
+  ): Promise<LessonOrder> {
+    let order = await this.requireOrder(orderId);
+    if (order.institutionId !== institutionId) {
+      throw new ApiError(404, 'LESSON_ORDER_NOT_FOUND', '购课订单不存在');
+    }
+    if (order.status === 'refunded') return this.view(order);
+    if (!['completed', 'refunding'].includes(order.status)) {
+      throw new ApiError(409, 'LESSON_ORDER_NOT_REFUNDABLE', '只有已完成订单可以退款');
+    }
+    let startedRefundNow = false;
+    let originalCompletedAt: Date | null = null;
+    if (order.status === 'completed') {
+      originalCompletedAt = order.completedAt;
+      if (!originalCompletedAt) {
+        throw new ApiError(409, 'LESSON_ORDER_COMPLETION_MISSING', '订单缺少完成时间');
+      }
+      order = await this.database.transaction(async (transaction) => {
+        const locked = await this.repository.lockById(orderId, transaction);
+        if (!locked) throw new ApiError(404, 'LESSON_ORDER_NOT_FOUND', '购课订单不存在');
+        const updated = await this.repository.markRefunding(
+          locked.id,
+          input.expectedRevision,
+          transaction,
+        );
+        if (!updated) {
+          throw new ApiError(409, 'LESSON_ORDER_VERSION_CONFLICT', '订单已变化，请刷新后重试');
+        }
+        await this.audit.record(
+          {
+            ...context,
+            category: 'business',
+            action: 'lesson-order.refund-started',
+            resourceType: 'lesson.order',
+            resourceId: locked.id,
+            changes: [{ field: 'status', before: locked.status, after: updated.status }],
+            metadata: { orderNo: locked.orderNo, reason: input.reason },
+          },
+          transaction,
+        );
+        return updated;
+      });
+      startedRefundNow = true;
+    }
+
+    const refundAttemptKey = `lesson-order-refund:${order.id}:${order.revision}`;
+    try {
+      if (order.productType === 'lesson_package') {
+        if (!order.grantMovementId) {
+          throw new ApiError(409, 'LESSON_ORDER_GRANT_MISSING', '订单缺少课时发放记录');
+        }
+        await this.lessons.refundPurchase(
+          {
+            institutionId,
+            studentId: order.studentId,
+            grantMovementId: order.grantMovementId,
+            orderNo: order.orderNo,
+            operationKey: refundAttemptKey,
+            reason: `订单退款回收：${input.reason}`,
+          },
+          context,
+        );
+      } else {
+        if (!order.periodCardEntitlementId) {
+          throw new ApiError(409, 'PERIOD_CARD_ORDER_ENTITLEMENT_MISSING', '订单缺少周期卡权益');
+        }
+        const entitlement = await this.periodCardEntitlements.getEntitlement(
+          institutionId,
+          order.periodCardEntitlementId,
+        );
+        if (entitlement.lifecycleState !== 'revoked') {
+          await this.periodCardEntitlements.revoke(
+            institutionId,
+            entitlement.id,
+            {
+              operationId: deterministicUuid(refundAttemptKey),
+              expectedRevision: entitlement.revision,
+              reason: `订单退款撤销：${input.reason}`,
+            },
+            context,
+          );
+        }
+      }
+    } catch (error) {
+      if (startedRefundNow && originalCompletedAt) {
+        await this.database.transaction(async (transaction) => {
+          const restored = await this.repository.restoreCompletedAfterRejectedRefund(
+            order.id,
+            originalCompletedAt!,
+            transaction,
+          );
+          if (!restored) return;
+          await this.audit.record(
+            {
+              ...context,
+              category: 'business',
+              action: 'lesson-order.refund-rejected',
+              resourceType: 'lesson.order',
+              resourceId: restored.id,
+              changes: [{ field: 'status', before: 'refunding', after: 'completed' }],
+              metadata: {
+                orderNo: restored.orderNo,
+                reason: input.reason,
+                errorCode: error instanceof ApiError ? error.code : 'ENTITLEMENT_RECOVERY_FAILED',
+              },
+            },
+            transaction,
+          );
+        });
+      }
+      throw error;
+    }
+
+    if (order.channel === 'online') {
+      if (!order.paymentIntentId) {
+        throw new ApiError(409, 'LESSON_ORDER_PAYMENT_MISSING', '线上订单缺少支付交易');
+      }
+      const paymentRefund = await this.payments.refundForBusinessWorkflow(
+        order.paymentIntentId,
+        {
+          requestKey: `lesson-order-refund:${order.id}`,
+          amountMinor: order.amountMinor,
+          reason: `购课订单 ${order.orderNo} 全额退款`,
+        },
+        context,
+      );
+      if (paymentRefund.status !== 'succeeded') {
+        throw new ApiError(
+          409,
+          'LESSON_ORDER_REFUND_RECONCILIATION_REQUIRED',
+          '退款结果尚未确认，订单保持退款处理中，请对账后重试',
+        );
+      }
+    }
+
+    const refunded = await this.database.transaction(async (transaction) => {
+      const updated = await this.repository.markRefunded(order.id, transaction);
+      if (!updated) {
+        const current = await this.repository.lockById(order.id, transaction);
+        if (current?.status === 'refunded') return current;
+        throw new ApiError(409, 'LESSON_ORDER_REFUND_STATE_CONFLICT', '订单退款状态更新冲突');
+      }
+      await this.audit.record(
+        {
+          ...context,
+          category: 'business',
+          action: 'lesson-order.refunded',
+          resourceType: 'lesson.order',
+          resourceId: updated.id,
+          changes: [{ field: 'status', before: 'refunding', after: 'refunded' }],
+          metadata: {
+            orderNo: updated.orderNo,
+            reason: input.reason,
+            channel: updated.channel,
+            amountMinor: updated.amountMinor,
+          },
+        },
+        transaction,
+      );
+      return updated;
+    });
+    return this.view(refunded);
   }
 
   async assertRefundAllowed(request: { merchantReference: string }): Promise<void> {
@@ -1073,6 +1242,14 @@ export class LessonCommerceService implements PaymentFactReceiver {
       message: '支付成功，商品权益发放失败，系统将自动重试',
     };
   }
+}
+
+function deterministicUuid(value: string): string {
+  const hex = createHash('sha256').update(value).digest('hex').slice(0, 32).split('');
+  hex[12] = '5';
+  hex[16] = ((Number.parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16);
+  const joined = hex.join('');
+  return `${joined.slice(0, 8)}-${joined.slice(8, 12)}-${joined.slice(12, 16)}-${joined.slice(16, 20)}-${joined.slice(20)}`;
 }
 
 function amountInChineseUppercase(amountMinor: number): string {

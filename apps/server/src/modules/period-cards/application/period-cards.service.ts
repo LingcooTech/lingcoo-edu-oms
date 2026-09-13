@@ -74,6 +74,13 @@ export interface PeriodCardEntitlementIssuer {
     context: PeriodCardMutationActor,
     transaction: DatabaseTransaction,
   ): Promise<PeriodCardEntitlement>;
+  getEntitlement(institutionId: string, entitlementId: string): Promise<PeriodCardEntitlement>;
+  revoke(
+    institutionId: string,
+    entitlementId: string,
+    input: RevokePeriodCardEntitlementRequest,
+    context: PeriodCardMutationActor,
+  ): Promise<PeriodCardEntitlement>;
 }
 
 export interface PeriodCardProductDirectory {
@@ -431,6 +438,13 @@ export class PeriodCardsService
           );
           if (entitlement.lifecycleState === 'revoked') {
             throw new ApiError(409, 'PERIOD_CARD_ENTITLEMENT_ALREADY_REVOKED', '周期卡权益已撤销');
+          }
+          if (entitlement.usedQuantity > 0) {
+            throw new ApiError(
+              409,
+              'PERIOD_CARD_ENTITLEMENT_ALREADY_USED',
+              '周期卡已经使用，不能直接撤销或自动退款',
+            );
           }
           if (entitlement.revision !== input.expectedRevision) {
             this.versionConflict('周期卡权益');

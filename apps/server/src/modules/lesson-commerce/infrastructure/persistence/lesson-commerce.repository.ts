@@ -195,6 +195,58 @@ export class LessonCommerceRepository {
     return record ?? null;
   }
 
+  async markRefunding(id: string, expectedRevision: number, executor: DatabaseTransaction) {
+    const [record] = await executor
+      .update(lessonCommerceOrders)
+      .set({
+        status: 'refunding',
+        completedAt: null,
+        revision: expectedRevision + 1,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(lessonCommerceOrders.id, id),
+          eq(lessonCommerceOrders.status, 'completed'),
+          eq(lessonCommerceOrders.revision, expectedRevision),
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async markRefunded(id: string, executor: DatabaseTransaction) {
+    const [record] = await executor
+      .update(lessonCommerceOrders)
+      .set({
+        status: 'refunded',
+        completedAt: null,
+        revision: sql`${lessonCommerceOrders.revision} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(lessonCommerceOrders.id, id), eq(lessonCommerceOrders.status, 'refunding')))
+      .returning();
+    return record ?? null;
+  }
+
+  async restoreCompletedAfterRejectedRefund(
+    id: string,
+    completedAt: Date,
+    executor: DatabaseTransaction,
+  ) {
+    const [record] = await executor
+      .update(lessonCommerceOrders)
+      .set({
+        status: 'completed',
+        completedAt,
+        revision: sql`${lessonCommerceOrders.revision} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(lessonCommerceOrders.id, id), eq(lessonCommerceOrders.status, 'refunding')))
+      .returning();
+    return record ?? null;
+  }
+
   listForGuardian(guardianId: string, input: LessonOrderListQuery) {
     return this.list([eq(lessonCommerceOrders.guardianId, guardianId)], input);
   }

@@ -227,6 +227,11 @@ export const retryLessonOrderGrantRequestSchema = z.object({
   reason: z.string().trim().min(1).max(500).default('重试订单商品权益自动发放'),
 });
 
+export const refundLessonOrderRequestSchema = z.object({
+  expectedRevision: z.number().int().positive(),
+  reason: z.string().trim().min(2).max(500),
+});
+
 export const lessonReceiptSchema = z.object({
   receiptNo: z.string().trim().min(1).max(80),
   title: z.literal('收据'),
@@ -262,3 +267,4 @@ export type LessonOrderListQuery = z.output<typeof lessonOrderListQuerySchema>;
 export type LessonOrderCheckout = z.infer<typeof lessonOrderCheckoutSchema>;
 export type LessonReceipt = z.infer<typeof lessonReceiptSchema>;
 export type RetryLessonOrderGrantRequest = z.input<typeof retryLessonOrderGrantRequestSchema>;
+export type RefundLessonOrderRequest = z.infer<typeof refundLessonOrderRequestSchema>;

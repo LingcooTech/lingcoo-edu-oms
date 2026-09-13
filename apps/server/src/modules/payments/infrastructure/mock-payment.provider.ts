@@ -40,6 +40,10 @@ export class MockPaymentProvider implements PaymentProviderAdapter {
     return { providerRefundId: `mock_refund_${input.refundId}`, status: 'succeeded' as const };
   }
 
+  async queryRefund(refundId: string) {
+    return { providerRefundId: `mock_refund_${refundId}`, status: 'succeeded' as const };
+  }
+
   async verifyCallback(
     input: unknown,
     signature: string | undefined,

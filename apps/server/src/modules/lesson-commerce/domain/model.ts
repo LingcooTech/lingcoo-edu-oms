@@ -3,6 +3,8 @@ import type {
   Institution,
   InstitutionListQuery,
   PaymentIntentDetail,
+  PaymentRefund,
+  CreatePaymentRefundRequest,
   OrganizationProfile,
 } from '@lingcoo-edu-oms/contracts';
 
@@ -20,6 +22,11 @@ export interface LessonCommercePayments {
   getIntent(id: string): Promise<PaymentIntentDetail>;
   close(id: string, context: AuditContext & { actorId: string }): Promise<PaymentIntentDetail>;
   reconcile(id: string, context: AuditContext & { actorId: string }): Promise<PaymentIntentDetail>;
+  refundForBusinessWorkflow(
+    id: string,
+    input: CreatePaymentRefundRequest,
+    context: AuditContext & { actorId: string },
+  ): Promise<PaymentRefund>;
 }
 
 export interface WechatMiniPayerDirectory {

@@ -6,9 +6,11 @@ import {
   lessonOrderSchema,
   lessonReceiptSchema,
   retryLessonOrderGrantRequestSchema,
+  refundLessonOrderRequestSchema,
   type LessonOrderListQuery,
   type CreateOfflineLessonOrderRequest,
   type RetryLessonOrderGrantRequest,
+  type RefundLessonOrderRequest,
 } from '@lingcoo-edu-oms/contracts';
 
 import type { ApiClient } from './client.js';
@@ -52,6 +54,14 @@ export function createLessonCommerceApi(client: ApiClient) {
         method: 'POST',
         path: `${collectionPath(institutionId)}/${pathId(orderId)}/actions/retry-grant`,
         body: retryLessonOrderGrantRequestSchema.parse(input),
+        schema: lessonOrderSchema,
+      });
+    },
+    refund(institutionId: string, orderId: string, input: RefundLessonOrderRequest) {
+      return client.request({
+        method: 'POST',
+        path: `${collectionPath(institutionId)}/${pathId(orderId)}/actions/refund`,
+        body: refundLessonOrderRequestSchema.parse(input),
         schema: lessonOrderSchema,
       });
     },
