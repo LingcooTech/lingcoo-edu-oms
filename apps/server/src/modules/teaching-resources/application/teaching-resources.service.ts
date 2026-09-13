@@ -135,6 +135,14 @@ export class TeachingResourcesService implements LessonSessionResourceConflictPo
     };
   }
 
+  async getClassroom(campusId: string, classroomId: string, executor?: DatabaseExecutor) {
+    const classroom = await this.requireClassroom(classroomId, executor);
+    if (classroom.campusId !== campusId) {
+      throw this.notFound('CLASSROOM_NOT_FOUND', '教室不存在');
+    }
+    return this.classroomView(classroom);
+  }
+
   async createClassroom(campusId: string, input: CreateClassroomRequest, context: AuditContext) {
     return this.mutate('classroom.created', 'teaching.classroom', context, async (transaction) => {
       await this.requireActiveCampus(campusId, transaction);
@@ -166,6 +174,10 @@ export class TeachingResourcesService implements LessonSessionResourceConflictPo
       page: input.page,
       pageSize: input.pageSize,
     };
+  }
+
+  async getCourse(institutionId: string, courseId: string, executor?: DatabaseExecutor) {
+    return this.courseView(await this.requireInstitutionCourse(institutionId, courseId, executor));
   }
 
   async createCourse(institutionId: string, input: CreateCourseRequest, context: AuditContext) {

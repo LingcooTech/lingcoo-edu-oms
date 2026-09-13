@@ -159,6 +159,11 @@ const AdmissionsPage = lazy(() =>
 const ContentPage = lazy(() =>
   import('../features/content/ContentPage').then((module) => ({ default: module.ContentPage })),
 );
+const GroupMatchingPage = lazy(() =>
+  import('../features/group-matching/Page').then((module) => ({
+    default: module.GroupMatchingPage,
+  })),
+);
 
 function RouteLoading() {
   return (
@@ -190,6 +195,9 @@ export function AppRouter() {
             <Route element={<RequirePermission permissions={['education.students.read']} />}>
               <Route path="students" element={<StudentsPage />} />
               <Route path="students/:studentId/360" element={<Student360Page />} />
+            </Route>
+            <Route element={<RequirePermission permissions={['education.enrollments.read']} />}>
+              <Route path="group-matching" element={<GroupMatchingPage />} />
             </Route>
             <Route element={<RequirePermission permissions={['education.leads.read']} />}>
               <Route path="admissions/leads" element={<AdmissionsPage initialTab="leads" />} />

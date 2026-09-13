@@ -22,3 +22,4 @@ export * from './student-360.js';
 export * from './teaching-resources.js';
 export * from './content.js';
 export * from './admissions.js';
+export * from './group-matching.js';

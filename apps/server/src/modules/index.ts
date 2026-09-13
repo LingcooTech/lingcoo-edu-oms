@@ -90,6 +90,7 @@ import {
   type LessonCommerceService,
 } from './lesson-commerce/public.js';
 import { createStudent360Module, createStudent360Service } from './student-360/public.js';
+import { createGroupMatchingModule, createGroupMatchingService } from './group-matching/public.js';
 
 export interface ApplicationModuleDependencies {
   environment: AppEnvironment;
@@ -275,6 +276,13 @@ export async function registerApplicationModules(
     sessions: lessonSessions,
     audit,
   });
+  const groupMatching = createGroupMatchingService({
+    database: dependencies.database,
+    institutions: organization,
+    people,
+    resources: teachingResources,
+    audit,
+  });
   const student360 = createStudent360Service({
     organization,
     people,
@@ -418,6 +426,16 @@ export async function registerApplicationModules(
       sessions: lessonSessions,
       audit,
       service: teachingResources,
+    }),
+  );
+  await app.register(
+    createGroupMatchingModule({
+      database: dependencies.database,
+      institutions: organization,
+      people,
+      resources: teachingResources,
+      audit,
+      service: groupMatching,
     }),
   );
   await app.register(

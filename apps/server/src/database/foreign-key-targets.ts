@@ -76,6 +76,18 @@ export const teachersForeignKeyTarget = pgTable('people_teachers', {
   id: uuid('id').primaryKey(),
 });
 
+export const teachingCampusesForeignKeyTarget = pgTable('teaching_resource_campuses', {
+  id: uuid('id').primaryKey(),
+});
+
+export const teachingClassroomsForeignKeyTarget = pgTable('teaching_resource_classrooms', {
+  id: uuid('id').primaryKey(),
+});
+
+export const teachingCoursesForeignKeyTarget = pgTable('teaching_resource_courses', {
+  id: uuid('id').primaryKey(),
+});
+
 export const teacherInstitutionsForeignKeyTarget = pgTable(
   'people_teacher_institutions',
   {

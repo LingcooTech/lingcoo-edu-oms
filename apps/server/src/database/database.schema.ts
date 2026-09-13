@@ -22,3 +22,4 @@ export * from '../modules/period-cards/infrastructure/persistence/period-cards.s
 export * from '../modules/teaching-resources/infrastructure/persistence/teaching-resources.schema.js';
 export * from '../modules/content/infrastructure/persistence/content.schema.js';
 export * from '../modules/admissions/infrastructure/persistence/admissions.schema.js';
+export * from '../modules/group-matching/infrastructure/persistence/group-matching.schema.js';

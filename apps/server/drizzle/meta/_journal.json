@@ -253,6 +253,20 @@
       "when": 1789226423557,
       "tag": "0035_complex_blink",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1789294042512,
+      "tag": "0036_eminent_starjammers",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1789294260813,
+      "tag": "0037_groovy_exodus",
+      "breakpoints": true
     }
   ]
 }

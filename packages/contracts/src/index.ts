@@ -29,3 +29,4 @@ export * from './period-cards.js';
 export * from './teaching-resources.js';
 export * from './content.js';
 export * from './admissions.js';
+export * from './group-matching.js';

@@ -156,6 +156,14 @@ export const foundationNavigation: AdminNavigationItem[] = [
     section: 'academic',
   },
   {
+    key: 'group-matching',
+    label: '拼课管理',
+    path: '/group-matching',
+    icon: <TeamOutlined />,
+    permission: 'education.enrollments.read',
+    section: 'academic',
+  },
+  {
     key: 'classes',
     label: '班级管理',
     path: '/classes',
