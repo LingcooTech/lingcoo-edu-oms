@@ -132,6 +132,14 @@ export const foundationNavigation: AdminNavigationItem[] = [
     section: 'admissions',
   },
   {
+    key: 'group-matching',
+    label: '拼课管理',
+    path: '/group-matching',
+    icon: <TeamOutlined />,
+    permission: 'education.enrollments.read',
+    section: 'admissions',
+  },
+  {
     key: 'content',
     label: '内容营销',
     path: '/content',
@@ -153,14 +161,6 @@ export const foundationNavigation: AdminNavigationItem[] = [
     path: '/students',
     icon: <TeamOutlined />,
     permission: 'education.students.read',
-    section: 'academic',
-  },
-  {
-    key: 'group-matching',
-    label: '拼课管理',
-    path: '/group-matching',
-    icon: <TeamOutlined />,
-    permission: 'education.enrollments.read',
     section: 'academic',
   },
   {
@@ -197,7 +197,7 @@ export const foundationNavigation: AdminNavigationItem[] = [
   },
   {
     key: 'lesson-packages',
-    label: '课时商品 / 课时包',
+    label: '课时包',
     path: '/lesson-packages',
     icon: <AccountBookOutlined />,
     permission: 'education.lesson-packages.read',

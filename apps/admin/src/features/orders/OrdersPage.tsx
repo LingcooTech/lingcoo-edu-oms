@@ -837,7 +837,7 @@ function OfflineOrderModal({
         </Form.Item>
         <div className="two-column-form-grid">
           {productType === 'lesson_package' ? (
-            <Form.Item name="packageId" label="课时包商品" rules={[{ required: true }]}>
+            <Form.Item name="packageId" label="课时包" rules={[{ required: true }]}>
               <Select
                 showSearch
                 optionFilterProp="label"

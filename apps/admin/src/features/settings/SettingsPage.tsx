@@ -190,7 +190,7 @@ function providerDescription(group: string): string {
     'content-sources': '外部内容来源；当前仅接入 Notion Connection。',
     'wechat-mini-program': '微信小程序服务端身份、运行版本和订阅消息模板。',
     'education-commerce':
-      '控制课时商品对外销售能力；线下订单由订单权限控制，不作为可关闭的业务模式。',
+      '控制课时包对外销售能力；线下订单由订单权限控制，不作为可关闭的业务模式。',
   };
   return descriptions[group] ?? '集中维护该服务的运行参数和敏感凭据。';
 }
