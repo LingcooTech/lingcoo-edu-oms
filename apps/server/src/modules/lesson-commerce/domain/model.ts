@@ -6,6 +6,7 @@ import type {
   PaymentRefund,
   CreatePaymentRefundRequest,
   OrganizationProfile,
+  LessonOrder,
 } from '@lingcoo-edu-oms/contracts';
 
 import type { AuditContext } from '../../audit/public.js';
@@ -50,4 +51,28 @@ export type LessonCommercePeopleDirectory = GuardianSelfDirectory & StudentOnboa
 
 export interface LessonCommercePaymentFacts {
   receive(fact: PaymentFact): Promise<void>;
+}
+
+export interface GroupFormationOrderIssuer {
+  ensureGroupFormationOrders(
+    input: {
+      institutionId: string;
+      formationId: string;
+      packageId: string;
+      packageVersion: number;
+      paymentDeadlineAt: Date | null;
+      members: Array<{
+        studentId: string;
+        studentName: string;
+        guardianId: string;
+        guardianName: string;
+        totalAmountMinor: number;
+        depositAppliedMinor: number;
+        balanceDueMinor: number;
+        depositPaymentMethod: 'cash' | 'bank_transfer' | 'wechat_transfer' | 'other';
+      }>;
+    },
+    context: AuditContext & { actorId: string },
+  ): Promise<LessonOrder[]>;
+  listGroupFormationOrders(formationId: string): Promise<LessonOrder[]>;
 }

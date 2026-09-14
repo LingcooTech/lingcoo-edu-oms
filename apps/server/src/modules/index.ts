@@ -281,6 +281,8 @@ export async function registerApplicationModules(
     institutions: organization,
     people,
     resources: teachingResources,
+    packages: lessonProducts,
+    orders: lessonCommerce,
     audit,
   });
   const student360 = createStudent360Service({
@@ -434,6 +436,8 @@ export async function registerApplicationModules(
       institutions: organization,
       people,
       resources: teachingResources,
+      packages: lessonProducts,
+      orders: lessonCommerce,
       audit,
       service: groupMatching,
     }),

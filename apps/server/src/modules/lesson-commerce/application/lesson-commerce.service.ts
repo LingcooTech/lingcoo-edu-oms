@@ -9,9 +9,11 @@ import {
   type LessonOrderListQuery,
   type LessonReceipt,
   type MiniStudentListQuery,
+  type RecordGroupOrderOfflineSettlementRequest,
   type RefundLessonOrderRequest,
   type PaymentIntentDetail,
   type PaymentProvider,
+  type StartGroupOrderOnlinePaymentRequest,
 } from '@lingcoo-edu-oms/contracts';
 
 import type { DatabaseHandle, DatabaseTransaction } from '../../../database/database.js';
@@ -29,6 +31,7 @@ import type {
   LessonCommerceInstitutionDirectory,
   LessonCommercePeopleDirectory,
   LessonCommercePayments,
+  GroupFormationOrderIssuer,
   WechatMiniPayerDirectory,
 } from '../domain/model.js';
 import {
@@ -38,7 +41,7 @@ import {
 
 type ActorContext = AuditContext & { actorId: string };
 
-export class LessonCommerceService implements PaymentFactReceiver {
+export class LessonCommerceService implements PaymentFactReceiver, GroupFormationOrderIssuer {
   constructor(
     private readonly database: DatabaseHandle,
     private readonly repository: LessonCommerceRepository,
@@ -160,7 +163,7 @@ export class LessonCommerceService implements PaymentFactReceiver {
     );
 
     let order = await this.requireOrder(claimed.value.id);
-    this.assertOwned(order, identityUserId);
+    await this.assertGuardianOwned(order, identityUserId);
     if (
       order.status === 'pending_payment' &&
       order.expiresAt &&
@@ -309,15 +312,255 @@ export class LessonCommerceService implements PaymentFactReceiver {
     return this.view(order);
   }
 
+  async ensureGroupFormationOrders(
+    input: Parameters<GroupFormationOrderIssuer['ensureGroupFormationOrders']>[0],
+    context: ActorContext,
+  ): Promise<LessonOrder[]> {
+    if (input.members.length === 0) return [];
+    let created: LessonCommerceOrderRecord[];
+    try {
+      created = await this.database.transaction(async (transaction) => {
+        await this.institutions.assertActiveInstitution(input.institutionId, transaction);
+        const product = await this.products.getVersion(
+          input.institutionId,
+          input.packageId,
+          input.packageVersion,
+          transaction,
+        );
+        if (
+          product.originType !== 'group_formation' ||
+          product.originId !== input.formationId ||
+          product.saleScope !== 'internal'
+        ) {
+          throw new ApiError(
+            409,
+            'GROUP_FORMATION_PACKAGE_SOURCE_MISMATCH',
+            '拼课成班课时包来源不一致',
+          );
+        }
+
+        const orders: LessonCommerceOrderRecord[] = [];
+        for (const member of input.members) {
+          if (
+            member.totalAmountMinor !== member.depositAppliedMinor + member.balanceDueMinor ||
+            member.totalAmountMinor !== product.priceAmount
+          ) {
+            throw new ApiError(
+              409,
+              'GROUP_FORMATION_SETTLEMENT_AMOUNT_MISMATCH',
+              '拼课订单金额与成班价格快照不一致',
+            );
+          }
+          const existing = await this.repository.findGroupFormationStudent(
+            input.formationId,
+            member.studentId,
+            transaction,
+          );
+          if (existing) {
+            this.assertGroupOrderDefinition(existing, input, member);
+            orders.push(existing);
+            continue;
+          }
+          const balanceSettled = member.balanceDueMinor === 0;
+          const order = await this.repository.create(
+            {
+              orderNo: this.orderNo(),
+              institutionId: input.institutionId,
+              studentId: member.studentId,
+              studentName: member.studentName,
+              guardianId: member.guardianId,
+              guardianName: member.guardianName,
+              createdByUserId: context.actorId,
+              sourceType: 'group_formation',
+              sourceReferenceId: input.formationId,
+              productType: 'lesson_package',
+              packageId: product.packageId,
+              packageVersionId: product.id,
+              packageVersion: product.version,
+              packageName: product.name,
+              baseUnits: product.baseUnits,
+              bonusUnits: product.bonusUnits,
+              channel: balanceSettled ? 'offline' : 'pending',
+              listedAmountMinor: member.totalAmountMinor,
+              amountMinor: member.totalAmountMinor,
+              depositAppliedMinor: member.depositAppliedMinor,
+              balanceDueMinor: member.balanceDueMinor,
+              currency: product.currency,
+              provider: null,
+              paymentMethod: balanceSettled ? member.depositPaymentMethod : 'pending',
+              paymentReference: null,
+              paymentNote: balanceSettled ? '拼课意向金已全额抵扣，无需补尾款' : null,
+              priceAdjustmentReason: null,
+              receiptNo: this.receiptNo(),
+              status: balanceSettled ? 'paid_pending_grant' : 'awaiting_settlement',
+              paidAt: balanceSettled ? this.clock() : null,
+              expiresAt: null,
+              paymentDeadlineAt: input.paymentDeadlineAt,
+            },
+            transaction,
+          );
+          await this.audit.record(
+            {
+              ...context,
+              category: 'business',
+              action: 'lesson-order.group-formation-created',
+              resourceType: 'lesson.order',
+              resourceId: order.id,
+              changes: [{ field: 'status', before: null, after: order.status }],
+              metadata: {
+                orderNo: order.orderNo,
+                formationId: input.formationId,
+                studentId: member.studentId,
+                amountMinor: member.totalAmountMinor,
+                depositAppliedMinor: member.depositAppliedMinor,
+                balanceDueMinor: member.balanceDueMinor,
+              },
+            },
+            transaction,
+          );
+          orders.push(order);
+        }
+        return orders;
+      });
+    } catch (error) {
+      if (!this.isUniqueViolation(error)) throw error;
+      created = await this.repository.listGroupFormationOrders(input.formationId);
+      if (created.length !== input.members.length) {
+        throw new ApiError(
+          409,
+          'GROUP_FORMATION_ORDER_CONCURRENT_CREATION',
+          '拼课订单正在并发创建，请稍后重试',
+        );
+      }
+      for (const member of input.members) {
+        const order = created.find((item) => item.studentId === member.studentId);
+        if (!order) {
+          throw new ApiError(409, 'GROUP_FORMATION_ORDER_MISSING', '成班学员订单创建不完整');
+        }
+        this.assertGroupOrderDefinition(order, input, member);
+      }
+    }
+
+    for (const order of created) {
+      if (order.status === 'paid_pending_grant' || order.status === 'grant_failed') {
+        try {
+          await this.grant(order, context);
+        } catch {
+          // A durable grant_failed state is visible to operators and can be retried.
+        }
+      }
+    }
+    return this.listGroupFormationOrders(input.formationId);
+  }
+
+  async listGroupFormationOrders(formationId: string): Promise<LessonOrder[]> {
+    const records = await this.repository.listGroupFormationOrders(formationId);
+    return records.map((record) => this.view(record));
+  }
+
+  async recordGroupOfflineSettlement(
+    institutionId: string,
+    orderId: string,
+    input: RecordGroupOrderOfflineSettlementRequest,
+    context: ActorContext,
+  ): Promise<LessonOrder> {
+    let order = await this.requireGroupOrder(institutionId, orderId);
+    if (order.status === 'completed') return this.view(order);
+    if (order.status !== 'awaiting_settlement') {
+      throw new ApiError(409, 'GROUP_ORDER_NOT_AWAITING_SETTLEMENT', '该拼课订单当前不能登记尾款');
+    }
+    if (input.paidAmountMinor !== order.balanceDueMinor) {
+      throw new ApiError(
+        400,
+        'GROUP_ORDER_BALANCE_AMOUNT_MISMATCH',
+        '实收尾款必须等于订单待付尾款',
+      );
+    }
+    const paidAt = input.paidAt ? new Date(input.paidAt) : this.clock();
+    const recordedLate = Boolean(
+      order.paymentDeadlineAt && paidAt.getTime() > order.paymentDeadlineAt.getTime(),
+    );
+    order = await this.database.transaction(async (transaction) => {
+      const updated = await this.repository.recordOfflineSettlement(
+        order.id,
+        input.expectedRevision,
+        {
+          paymentMethod: input.paymentMethod,
+          paymentReference: input.paymentReference,
+          paymentNote: input.paymentNote,
+          paidAt,
+        },
+        transaction,
+      );
+      if (!updated) {
+        throw new ApiError(409, 'LESSON_ORDER_VERSION_CONFLICT', '订单已变化，请刷新后重试');
+      }
+      await this.audit.record(
+        {
+          ...context,
+          category: 'business',
+          action: 'lesson-order.group-balance-offline-recorded',
+          resourceType: 'lesson.order',
+          resourceId: updated.id,
+          changes: [{ field: 'status', before: order.status, after: updated.status }],
+          metadata: {
+            orderNo: updated.orderNo,
+            formationId: updated.sourceReferenceId,
+            balanceDueMinor: updated.balanceDueMinor,
+            paymentMethod: updated.paymentMethod,
+            recordedLate,
+          },
+        },
+        transaction,
+      );
+      return updated;
+    });
+    try {
+      await this.grant(order, context);
+    } catch {
+      // Payment remains durable and the resulting grant_failed state is retryable.
+    }
+    return this.view(await this.requireOrder(order.id));
+  }
+
+  async startGroupOnlinePaymentForGuardian(
+    identityUserId: string,
+    orderId: string,
+    input: StartGroupOrderOnlinePaymentRequest,
+    context: ActorContext,
+  ): Promise<{ order: LessonOrder; payment: PaymentIntentDetail }> {
+    const order = await this.requireOrder(orderId);
+    await this.assertGuardianOwned(order, identityUserId);
+    return this.startGroupOnlinePayment(order, input.provider ?? 'wechat_pay', context);
+  }
+
+  async startGroupOnlinePaymentForInstitution(
+    institutionId: string,
+    orderId: string,
+    input: StartGroupOrderOnlinePaymentRequest,
+    context: ActorContext,
+  ): Promise<{ order: LessonOrder; payment: PaymentIntentDetail }> {
+    const order = await this.requireGroupOrder(institutionId, orderId);
+    const provider = input.provider ?? 'mock';
+    if (provider === 'wechat_pay') {
+      throw new ApiError(
+        409,
+        'GROUP_ORDER_GUARDIAN_PAYMENT_REQUIRED',
+        '微信尾款需由家长在小程序中发起',
+      );
+    }
+    return this.startGroupOnlinePayment(order, provider, context);
+  }
+
   async getForGuardian(identityUserId: string, orderId: string) {
     const order = await this.requireOrder(orderId);
-    this.assertOwned(order, identityUserId);
+    await this.assertGuardianOwned(order, identityUserId);
     return this.view(order);
   }
 
   async receiptForGuardian(identityUserId: string, orderId: string): Promise<LessonReceipt> {
     const order = await this.requireOrder(orderId);
-    this.assertOwned(order, identityUserId);
+    await this.assertGuardianOwned(order, identityUserId);
     return this.receipt(order);
   }
 
@@ -342,7 +585,7 @@ export class LessonCommerceService implements PaymentFactReceiver {
 
   async syncForGuardian(identityUserId: string, orderId: string, context: ActorContext) {
     const order = await this.requireOrder(orderId);
-    this.assertOwned(order, identityUserId);
+    await this.assertGuardianOwned(order, identityUserId);
     if (!order.paymentIntentId) {
       throw new ApiError(409, 'LESSON_ORDER_PAYMENT_NOT_CREATED', '订单尚未创建支付交易');
     }
@@ -372,6 +615,13 @@ export class LessonCommerceService implements PaymentFactReceiver {
     let order = await this.requireOrder(orderId);
     if (order.institutionId !== institutionId) {
       throw new ApiError(404, 'LESSON_ORDER_NOT_FOUND', '购课订单不存在');
+    }
+    if (order.sourceType === 'group_formation') {
+      throw new ApiError(
+        409,
+        'GROUP_ORDER_REFUND_WORKFLOW_REQUIRED',
+        '拼课订单包含意向金与尾款，需通过拼课专用退款流程处理',
+      );
     }
     if (order.status === 'refunded') return this.view(order);
     if (!['completed', 'refunding'].includes(order.status)) {
@@ -532,7 +782,9 @@ export class LessonCommerceService implements PaymentFactReceiver {
   }
 
   async assertRefundAllowed(request: { merchantReference: string }): Promise<void> {
-    const order = await this.repository.findByOrderNo(request.merchantReference);
+    const order = await this.repository.findByOrderNo(
+      this.businessOrderNo(request.merchantReference),
+    );
     if (order) {
       throw new ApiError(
         409,
@@ -543,12 +795,16 @@ export class LessonCommerceService implements PaymentFactReceiver {
   }
 
   async receive(fact: PaymentFact): Promise<void> {
-    const order = await this.repository.findByOrderNo(fact.merchantReference);
+    const order =
+      (await this.repository.findByPaymentIntentId(fact.intentId)) ??
+      (await this.repository.findByOrderNo(this.businessOrderNo(fact.merchantReference)));
     if (!order) return;
     if (order.paymentIntentId !== fact.intentId) {
       throw new ApiError(409, 'LESSON_ORDER_PAYMENT_IDENTITY_MISMATCH', '订单支付身份不匹配');
     }
-    if (order.amountMinor !== fact.amountMinor || order.currency !== fact.currency) {
+    const expectedAmountMinor =
+      order.sourceType === 'group_formation' ? order.balanceDueMinor : order.amountMinor;
+    if (expectedAmountMinor !== fact.amountMinor || order.currency !== fact.currency) {
       throw new ApiError(409, 'LESSON_ORDER_PAYMENT_AMOUNT_MISMATCH', '订单支付金额或币种不匹配');
     }
     if (fact.status !== 'succeeded') {
@@ -704,8 +960,12 @@ export class LessonCommerceService implements PaymentFactReceiver {
       guardianId: guardian.id,
       guardianName: guardian.fullName,
       createdByUserId: actorId,
+      sourceType: 'normal' as const,
+      sourceReferenceId: null,
       channel: 'offline' as const,
       amountMinor: input.paidAmountMinor,
+      depositAppliedMinor: 0,
+      balanceDueMinor: input.paidAmountMinor,
       provider: null,
       paymentMethod: input.paymentMethod,
       paymentReference: input.paymentReference ?? null,
@@ -715,6 +975,7 @@ export class LessonCommerceService implements PaymentFactReceiver {
       status: 'paid_pending_grant' as const,
       paidAt: new Date(input.receivedAt),
       expiresAt: null,
+      paymentDeadlineAt: null,
     };
   }
 
@@ -754,6 +1015,8 @@ export class LessonCommerceService implements PaymentFactReceiver {
         guardianId: owner.guardianId,
         guardianName: owner.guardianName,
         createdByUserId: identityUserId,
+        sourceType: 'normal',
+        sourceReferenceId: null,
         productType: 'lesson_package',
         packageId: product.packageId,
         packageVersionId: product.id,
@@ -764,6 +1027,8 @@ export class LessonCommerceService implements PaymentFactReceiver {
         channel: 'online',
         listedAmountMinor: product.priceAmount,
         amountMinor: product.priceAmount,
+        depositAppliedMinor: 0,
+        balanceDueMinor: product.priceAmount,
         currency: product.currency,
         provider,
         paymentMethod: provider === 'wechat_pay' ? 'wechat_pay' : 'mock',
@@ -772,6 +1037,7 @@ export class LessonCommerceService implements PaymentFactReceiver {
         priceAdjustmentReason: null,
         receiptNo: this.receiptNo(),
         expiresAt: new Date(this.clock().getTime() + 30 * 60_000),
+        paymentDeadlineAt: null,
       },
       transaction,
     );
@@ -799,6 +1065,8 @@ export class LessonCommerceService implements PaymentFactReceiver {
         guardianId: owner.guardianId,
         guardianName: owner.guardianName,
         createdByUserId: identityUserId,
+        sourceType: 'normal',
+        sourceReferenceId: null,
         productType: 'period_card',
         periodCardProductId: product.productId,
         periodCardProductVersionId: product.id,
@@ -812,6 +1080,8 @@ export class LessonCommerceService implements PaymentFactReceiver {
         channel: 'online',
         listedAmountMinor: product.priceAmount,
         amountMinor: product.priceAmount,
+        depositAppliedMinor: 0,
+        balanceDueMinor: product.priceAmount,
         currency: product.currency,
         provider,
         paymentMethod: provider === 'wechat_pay' ? 'wechat_pay' : 'mock',
@@ -820,6 +1090,7 @@ export class LessonCommerceService implements PaymentFactReceiver {
         priceAdjustmentReason: null,
         receiptNo: this.receiptNo(),
         expiresAt: new Date(this.clock().getTime() + 30 * 60_000),
+        paymentDeadlineAt: null,
       },
       transaction,
     );
@@ -838,9 +1109,13 @@ export class LessonCommerceService implements PaymentFactReceiver {
       provider === 'wechat_pay' ? await this.payers.openIdForIdentity(context.actorId) : undefined;
     const payment = await this.payments.createIntent(
       {
-        merchantReference: order.orderNo,
+        merchantReference:
+          order.sourceType === 'group_formation'
+            ? `${order.orderNo}:balance:${order.revision}`
+            : order.orderNo,
         provider,
-        amountMinor: order.amountMinor,
+        amountMinor:
+          order.sourceType === 'group_formation' ? order.balanceDueMinor : order.amountMinor,
         currency: order.currency,
         description: this.paymentDescription(order),
       },
@@ -857,6 +1132,71 @@ export class LessonCommerceService implements PaymentFactReceiver {
       }
     }
     return payment;
+  }
+
+  private async startGroupOnlinePayment(
+    initial: LessonCommerceOrderRecord,
+    provider: PaymentProvider,
+    context: ActorContext,
+  ): Promise<{ order: LessonOrder; payment: PaymentIntentDetail }> {
+    if (initial.sourceType !== 'group_formation') {
+      throw new ApiError(409, 'GROUP_ORDER_REQUIRED', '该订单不是拼课尾款订单');
+    }
+    if (initial.balanceDueMinor <= 0) {
+      throw new ApiError(409, 'GROUP_ORDER_BALANCE_NOT_DUE', '该订单没有待支付尾款');
+    }
+    if (initial.paymentDeadlineAt && initial.paymentDeadlineAt.getTime() < this.clock().getTime()) {
+      throw new ApiError(
+        409,
+        'GROUP_ORDER_PAYMENT_DEADLINE_PASSED',
+        '该拼课订单已超过尾款截止时间',
+      );
+    }
+
+    let order = initial;
+    if (order.status === 'awaiting_settlement') {
+      order = await this.database.transaction(async (transaction) => {
+        const prepared = await this.repository.prepareOnlineSettlement(
+          order.id,
+          order.revision,
+          provider,
+          new Date(this.clock().getTime() + 30 * 60_000),
+          transaction,
+        );
+        if (!prepared) {
+          throw new ApiError(409, 'LESSON_ORDER_VERSION_CONFLICT', '订单已变化，请刷新后重试');
+        }
+        await this.audit.record(
+          {
+            ...context,
+            category: 'business',
+            action: 'lesson-order.group-balance-online-started',
+            resourceType: 'lesson.order',
+            resourceId: prepared.id,
+            changes: [{ field: 'status', before: order.status, after: prepared.status }],
+            metadata: {
+              orderNo: prepared.orderNo,
+              formationId: prepared.sourceReferenceId,
+              balanceDueMinor: prepared.balanceDueMinor,
+              provider,
+            },
+          },
+          transaction,
+        );
+        return prepared;
+      });
+    } else if (order.status !== 'pending_payment') {
+      throw new ApiError(
+        409,
+        'GROUP_ORDER_NOT_AWAITING_SETTLEMENT',
+        '该拼课订单当前不能发起尾款支付',
+      );
+    }
+    if (order.provider !== provider) {
+      throw new ApiError(409, 'LESSON_ORDER_PROVIDER_CONFLICT', '订单支付方式不能变更');
+    }
+    const payment = await this.ensurePaymentIntent(order, provider, context);
+    return { order: this.view(await this.requireOrder(order.id)), payment };
   }
 
   private async grant(order: LessonCommerceOrderRecord, context: ActorContext) {
@@ -1009,6 +1349,24 @@ export class LessonCommerceService implements PaymentFactReceiver {
     await this.database.transaction(async (transaction) => {
       const locked = await this.repository.lockById(order.id, transaction);
       if (!locked || locked.status !== 'pending_payment') return;
+      if (locked.sourceType === 'group_formation') {
+        const restored = await this.repository.restoreAwaitingSettlement(locked.id, transaction);
+        if (!restored) return;
+        await this.audit.record(
+          {
+            actorType: 'provider',
+            actorLabel: order.provider,
+            category: 'business',
+            action: 'lesson-order.group-balance-payment-reset',
+            resourceType: 'lesson.order',
+            resourceId: order.id,
+            changes: [{ field: 'status', before: locked.status, after: restored.status }],
+            metadata: { paymentStatus: fact.status, paymentIntentId: fact.intentId },
+          },
+          transaction,
+        );
+        return;
+      }
       const closed = await this.repository.markClosed(locked.id, transaction);
       if (!closed) return;
       await this.audit.record(
@@ -1057,10 +1415,54 @@ export class LessonCommerceService implements PaymentFactReceiver {
     return order;
   }
 
-  private assertOwned(order: LessonCommerceOrderRecord, identityUserId: string) {
-    if (order.createdByUserId !== identityUserId) {
+  private async assertGuardianOwned(order: LessonCommerceOrderRecord, identityUserId: string) {
+    const guardian = await this.people.guardianForIdentity(identityUserId);
+    if (order.guardianId !== guardian.id) {
       throw new ApiError(404, 'LESSON_ORDER_NOT_FOUND', '购课订单不存在');
     }
+  }
+
+  private async requireGroupOrder(institutionId: string, orderId: string) {
+    const order = await this.requireOrder(orderId);
+    if (order.institutionId !== institutionId || order.sourceType !== 'group_formation') {
+      throw new ApiError(404, 'LESSON_ORDER_NOT_FOUND', '拼课订单不存在');
+    }
+    return order;
+  }
+
+  private assertGroupOrderDefinition(
+    order: LessonCommerceOrderRecord,
+    input: Parameters<GroupFormationOrderIssuer['ensureGroupFormationOrders']>[0],
+    member: Parameters<
+      GroupFormationOrderIssuer['ensureGroupFormationOrders']
+    >[0]['members'][number],
+  ) {
+    if (
+      order.institutionId !== input.institutionId ||
+      order.sourceReferenceId !== input.formationId ||
+      order.packageId !== input.packageId ||
+      order.packageVersion !== input.packageVersion ||
+      order.guardianId !== member.guardianId ||
+      order.amountMinor !== member.totalAmountMinor ||
+      order.depositAppliedMinor !== member.depositAppliedMinor ||
+      order.balanceDueMinor !== member.balanceDueMinor
+    ) {
+      throw new ApiError(
+        409,
+        'GROUP_FORMATION_ORDER_DEFINITION_CONFLICT',
+        '既有拼课订单与成班结论不一致',
+      );
+    }
+  }
+
+  private businessOrderNo(merchantReference: string) {
+    return merchantReference.split(':balance:', 1)[0]!;
+  }
+
+  private isUniqueViolation(error: unknown) {
+    return (
+      typeof error === 'object' && error !== null && (error as { code?: string }).code === '23505'
+    );
   }
 
   private page(
@@ -1084,9 +1486,13 @@ export class LessonCommerceService implements PaymentFactReceiver {
       studentName: record.studentName,
       guardianId: record.guardianId,
       guardianName: record.guardianName,
+      sourceType: record.sourceType,
+      sourceReferenceId: record.sourceReferenceId,
       channel: record.channel,
       listedAmountMinor: record.listedAmountMinor,
       amountMinor: record.amountMinor,
+      depositAppliedMinor: record.depositAppliedMinor,
+      balanceDueMinor: record.balanceDueMinor,
       currency: record.currency,
       provider: record.provider,
       paymentMethod: record.paymentMethod,
@@ -1102,6 +1508,7 @@ export class LessonCommerceService implements PaymentFactReceiver {
       completedAt: record.completedAt?.toISOString() ?? null,
       closedAt: record.closedAt?.toISOString() ?? null,
       expiresAt: record.expiresAt?.toISOString() ?? null,
+      paymentDeadlineAt: record.paymentDeadlineAt?.toISOString() ?? null,
       revision: record.revision,
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
@@ -1202,7 +1609,8 @@ export class LessonCommerceService implements PaymentFactReceiver {
       receiptNo: order.receiptNo,
       title: '收据',
       issuedAt: (order.completedAt ?? order.paidAt ?? order.updatedAt).toISOString(),
-      settlementMark: order.paymentMethod === 'cash' ? '现金收讫' : '款项已收',
+      settlementMark:
+        order.sourceType === 'normal' && order.paymentMethod === 'cash' ? '现金收讫' : '款项已收',
       amountUppercase: amountInChineseUppercase(order.amountMinor),
       organization: {
         name: organization.name,

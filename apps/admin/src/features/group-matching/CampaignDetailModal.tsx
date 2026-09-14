@@ -140,8 +140,12 @@ export function CampaignDetailModal({
               canManage={canManage}
               onRecordDeposit={setDepositEnrollment}
             />
-            {campaign.status === 'formed' && detail.data.formation && (
-              <FormationSnapshot formation={detail.data.formation} />
+            {institutionId && campaign.status === 'formed' && detail.data.formation && (
+              <FormationSnapshot
+                formation={detail.data.formation}
+                institutionId={institutionId}
+                canManage={canManage}
+              />
             )}
           </>
         ) : null}

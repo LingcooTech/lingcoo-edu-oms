@@ -13,6 +13,8 @@ function fixture(productType: 'lesson_package' | 'period_card' = 'lesson_package
     guardianId: '44444444-4444-4444-8444-444444444444',
     guardianName: '小满妈妈',
     createdByUserId: '55555555-5555-4555-8555-555555555555',
+    sourceType: 'normal' as const,
+    sourceReferenceId: null,
     productType,
     packageId: productType === 'lesson_package' ? '66666666-6666-4666-8666-666666666666' : null,
     packageVersionId:
@@ -35,6 +37,8 @@ function fixture(productType: 'lesson_package' | 'period_card' = 'lesson_package
     channel: 'online' as const,
     listedAmountMinor: 12_800,
     amountMinor: 12_800,
+    depositAppliedMinor: 0,
+    balanceDueMinor: 12_800,
     currency: 'CNY' as const,
     provider: 'mock' as const,
     paymentMethod: 'mock' as const,
@@ -53,12 +57,14 @@ function fixture(productType: 'lesson_package' | 'period_card' = 'lesson_package
     completedAt: null as Date | null,
     closedAt: null as Date | null,
     expiresAt: new Date('2026-09-11T08:30:00.000Z'),
+    paymentDeadlineAt: null,
     revision: 1,
     createdAt: now,
     updatedAt: now,
   };
   const repository = {
     findByOrderNo: vi.fn(async () => order),
+    findByPaymentIntentId: vi.fn(async () => order),
     lockById: vi.fn(async () => order),
     markPaid: vi.fn(async (_id: string, paidAt: Date) => {
       order.status = 'paid_pending_grant';

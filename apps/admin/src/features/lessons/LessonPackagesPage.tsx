@@ -216,6 +216,9 @@ export function LessonPackagesPage() {
                 render: (name, record) => (
                   <Space direction="vertical" size={0}>
                     <Typography.Text strong>{name}</Typography.Text>
+                    {record.saleScope === 'internal' ? (
+                      <Tag color="purple">拼课成班自动生成</Tag>
+                    ) : null}
                     <Typography.Text type="secondary">
                       {record.description || '无额外说明'}
                     </Typography.Text>
@@ -274,7 +277,7 @@ export function LessonPackagesPage() {
                 fixed: 'right',
                 width: 90,
                 render: (_, record) =>
-                  canManage ? (
+                  canManage && record.saleScope !== 'internal' ? (
                     <Button
                       type="link"
                       icon={<EditOutlined />}
@@ -285,6 +288,8 @@ export function LessonPackagesPage() {
                     >
                       编辑
                     </Button>
+                  ) : record.saleScope === 'internal' ? (
+                    '系统维护'
                   ) : (
                     '—'
                   ),

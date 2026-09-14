@@ -8,6 +8,8 @@ import {
   miniStudentListQuerySchema,
   retryLessonOrderGrantRequestSchema,
   refundLessonOrderRequestSchema,
+  recordGroupOrderOfflineSettlementRequestSchema,
+  startGroupOrderOnlinePaymentRequestSchema,
 } from '@lingcoo-edu-oms/contracts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -68,6 +70,17 @@ export async function registerLessonCommerceRoutes(
       parse(orderParamsSchema, request.params).orderId,
       actorWithId(request),
     ),
+  );
+  app.post(
+    '/api/mini/orders/:orderId/actions/start-online-payment',
+    { config: authenticated },
+    async (request) =>
+      service.startGroupOnlinePaymentForGuardian(
+        userId(request),
+        parse(orderParamsSchema, request.params).orderId,
+        parse(startGroupOrderOnlinePaymentRequestSchema, request.body ?? {}),
+        actorWithId(request),
+      ),
   );
 
   app.get(
@@ -137,6 +150,46 @@ export async function registerLessonCommerceRoutes(
       parse(retryLessonOrderGrantRequestSchema, request.body ?? {});
       const params = parse(institutionParamsSchema.extend({ orderId: z.uuid() }), request.params);
       return service.retryGrant(params.institutionId, params.orderId, actorWithId(request));
+    },
+  );
+  app.post(
+    '/api/institutions/:institutionId/orders/:orderId/actions/start-online-payment',
+    {
+      config: {
+        access: {
+          permissions: ['education.orders.manage'],
+          education: { institutionParam: 'institutionId', permission: 'education.orders.manage' },
+        },
+      },
+    },
+    async (request) => {
+      const params = parse(institutionParamsSchema.extend({ orderId: z.uuid() }), request.params);
+      return service.startGroupOnlinePaymentForInstitution(
+        params.institutionId,
+        params.orderId,
+        parse(startGroupOrderOnlinePaymentRequestSchema, request.body ?? {}),
+        actorWithId(request),
+      );
+    },
+  );
+  app.post(
+    '/api/institutions/:institutionId/orders/:orderId/actions/record-offline-settlement',
+    {
+      config: {
+        access: {
+          permissions: ['education.orders.manage'],
+          education: { institutionParam: 'institutionId', permission: 'education.orders.manage' },
+        },
+      },
+    },
+    async (request) => {
+      const params = parse(institutionParamsSchema.extend({ orderId: z.uuid() }), request.params);
+      return service.recordGroupOfflineSettlement(
+        params.institutionId,
+        params.orderId,
+        parse(recordGroupOrderOfflineSettlementRequestSchema, request.body),
+        actorWithId(request),
+      );
     },
   );
   app.post(

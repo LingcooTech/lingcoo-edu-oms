@@ -7,10 +7,15 @@ import {
   lessonReceiptSchema,
   retryLessonOrderGrantRequestSchema,
   refundLessonOrderRequestSchema,
+  recordGroupOrderOfflineSettlementRequestSchema,
   type LessonOrderListQuery,
   type CreateOfflineLessonOrderRequest,
+  type RecordGroupOrderOfflineSettlementRequest,
   type RetryLessonOrderGrantRequest,
   type RefundLessonOrderRequest,
+  startGroupOrderOnlinePaymentRequestSchema,
+  type StartGroupOrderOnlinePaymentRequest,
+  lessonOrderCheckoutSchema,
 } from '@lingcoo-edu-oms/contracts';
 
 import type { ApiClient } from './client.js';
@@ -62,6 +67,30 @@ export function createLessonCommerceApi(client: ApiClient) {
         method: 'POST',
         path: `${collectionPath(institutionId)}/${pathId(orderId)}/actions/refund`,
         body: refundLessonOrderRequestSchema.parse(input),
+        schema: lessonOrderSchema,
+      });
+    },
+    startGroupOnlinePayment(
+      institutionId: string,
+      orderId: string,
+      input: StartGroupOrderOnlinePaymentRequest = {},
+    ) {
+      return client.request({
+        method: 'POST',
+        path: `${collectionPath(institutionId)}/${pathId(orderId)}/actions/start-online-payment`,
+        body: startGroupOrderOnlinePaymentRequestSchema.parse(input),
+        schema: lessonOrderCheckoutSchema,
+      });
+    },
+    recordGroupOfflineSettlement(
+      institutionId: string,
+      orderId: string,
+      input: RecordGroupOrderOfflineSettlementRequest,
+    ) {
+      return client.request({
+        method: 'POST',
+        path: `${collectionPath(institutionId)}/${pathId(orderId)}/actions/record-offline-settlement`,
+        body: recordGroupOrderOfflineSettlementRequestSchema.parse(input),
         schema: lessonOrderSchema,
       });
     },

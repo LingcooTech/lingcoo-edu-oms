@@ -10,6 +10,7 @@ import type {
   GroupMatchingEnrollment,
   GroupMatchingFormation,
   GroupMatchingPriceTier,
+  LessonOrder,
   PublishGroupMatchingCampaignRequest,
   RecordGroupMatchingDepositRequest,
   UpdateGroupMatchingCampaignRequest,
@@ -17,6 +18,8 @@ import type {
 
 import type { DatabaseExecutor, DatabaseHandle } from '../../../database/database.js';
 import type { AuditContext, AuditWriter } from '../../audit/public.js';
+import type { GroupFormationOrderIssuer } from '../../lesson-commerce/public.js';
+import type { LessonPackageIssuer } from '../../lesson-products/public.js';
 import type { InstitutionDirectory } from '../../organization/public.js';
 import type {
   GroupMatchingPeopleDirectory,
@@ -40,6 +43,8 @@ export class GroupMatchingService {
     private readonly institutions: InstitutionDirectory,
     private readonly people: GroupMatchingPeopleDirectory,
     private readonly resources: GroupMatchingResourceDirectory,
+    private readonly packages: LessonPackageIssuer,
+    private readonly orders: GroupFormationOrderIssuer,
     private readonly audit: AuditWriter,
     private readonly clock: () => Date = () => new Date(),
   ) {}
@@ -417,13 +422,13 @@ export class GroupMatchingService {
     input: ConfirmGroupMatchingFormationRequest,
     context: ActorContext,
   ): Promise<GroupMatchingFormation> {
-    return this.database.transaction(async (transaction) => {
+    await this.database.transaction(async (transaction) => {
       const existing = await this.repository.findFormationByCampaign(campaignId, transaction);
       if (existing) {
         if (existing.institutionId !== institutionId) {
           throw new ApiError(404, 'GROUP_MATCHING_CAMPAIGN_NOT_FOUND', '拼课计划不存在');
         }
-        return this.formationView(existing, transaction);
+        return existing;
       }
       const campaign = await this.repository.lockCampaign(campaignId, transaction);
       this.assertInstitution(campaign, institutionId);
@@ -532,8 +537,98 @@ export class GroupMatchingService {
         },
         transaction,
       );
-      return this.formationView(created.formation, transaction, created.members);
+      return created.formation;
     });
+    return this.ensureFormationSettlement(institutionId, campaignId, context);
+  }
+
+  async ensureFormationSettlement(
+    institutionId: string,
+    campaignId: string,
+    context: ActorContext,
+  ): Promise<GroupMatchingFormation> {
+    const formation = await this.repository.findFormationByCampaign(campaignId);
+    if (!formation || formation.institutionId !== institutionId) {
+      throw new ApiError(404, 'GROUP_MATCHING_FORMATION_NOT_FOUND', '拼课成班结论不存在');
+    }
+    const [members, enrollments] = await Promise.all([
+      this.repository.listFormationMembers(formation.id),
+      this.repository.listEnrollments(campaignId),
+    ]);
+    const lessonPackage = await this.packages.ensureInternalPackageForFormation(
+      {
+        institutionId,
+        formationId: formation.id,
+        name: `${formation.titleSnapshot} · ${formation.finalParticipantCount} 人成班`,
+        description: `${formation.courseNameSnapshot}｜${formation.campusNameSnapshot}｜${formation.scheduleDescription}`,
+        baseUnits: formation.totalUnits,
+        bonusUnits: 0,
+        priceAmount: formation.unitPriceMinor,
+      },
+      context,
+    );
+    await this.database.transaction(async (transaction) => {
+      const attached = await this.repository.attachFormationPackage(
+        formation.id,
+        lessonPackage.packageId,
+        lessonPackage.version,
+        transaction,
+      );
+      if (!attached) {
+        throw new ApiError(409, 'GROUP_FORMATION_PACKAGE_CONFLICT', '成班课时包绑定发生冲突');
+      }
+    });
+
+    const lessonOrders = await this.orders.ensureGroupFormationOrders(
+      {
+        institutionId,
+        formationId: formation.id,
+        packageId: lessonPackage.packageId,
+        packageVersion: lessonPackage.version,
+        paymentDeadlineAt: formation.balanceDueAt,
+        members: members.map((member) => {
+          const enrollment = enrollments.find((item) => item.id === member.enrollmentId);
+          if (!enrollment?.depositPaymentMethod) {
+            throw new ApiError(
+              409,
+              'GROUP_FORMATION_DEPOSIT_SNAPSHOT_MISSING',
+              '入选学员缺少意向金支付方式',
+            );
+          }
+          return {
+            studentId: member.studentId,
+            studentName: member.studentNameSnapshot,
+            guardianId: member.guardianId,
+            guardianName: member.guardianNameSnapshot,
+            totalAmountMinor: member.totalAmountMinor,
+            depositAppliedMinor: member.depositAppliedMinor,
+            balanceDueMinor: member.balanceDueMinor,
+            depositPaymentMethod: enrollment.depositPaymentMethod,
+          };
+        }),
+      },
+      context,
+    );
+    await this.database.transaction(async (transaction) => {
+      for (const member of members) {
+        const order = lessonOrders.find((item) => item.studentId === member.studentId);
+        if (!order) {
+          throw new ApiError(409, 'GROUP_FORMATION_ORDER_MISSING', '成班学员订单创建不完整');
+        }
+        const attached = await this.repository.attachFormationMemberOrder(
+          formation.id,
+          member.studentId,
+          order.id,
+          this.memberStatus(order),
+          transaction,
+        );
+        if (!attached) {
+          throw new ApiError(409, 'GROUP_FORMATION_ORDER_CONFLICT', '成班学员订单绑定发生冲突');
+        }
+      }
+    });
+    const refreshed = await this.repository.findFormationByCampaign(campaignId);
+    return this.formationView(refreshed!, this.database.db, undefined, lessonOrders);
   }
 
   async cancel(
@@ -621,13 +716,21 @@ export class GroupMatchingService {
     record: GroupMatchingFormationRecord,
     executor: DatabaseExecutor = this.database.db,
     suppliedMembers?: GroupMatchingFormationMemberRecord[],
+    suppliedOrders?: LessonOrder[],
   ): Promise<GroupMatchingFormation> {
     const members =
       suppliedMembers ?? (await this.repository.listFormationMembers(record.id, executor));
+    const orders = suppliedOrders ?? (await this.orders.listGroupFormationOrders(record.id));
     return {
       ...record,
       selectedLearners: members.map((member) => ({
         ...member,
+        status: this.memberStatus(orders.find((order) => order.id === member.lessonOrderId)),
+        lessonOrderNo: orders.find((order) => order.id === member.lessonOrderId)?.orderNo ?? null,
+        lessonOrderRevision:
+          orders.find((order) => order.id === member.lessonOrderId)?.revision ?? null,
+        lessonOrderStatus:
+          orders.find((order) => order.id === member.lessonOrderId)?.status ?? null,
         createdAt: member.createdAt.toISOString(),
         updatedAt: member.updatedAt.toISOString(),
       })),
@@ -635,6 +738,13 @@ export class GroupMatchingService {
       confirmedAt: record.confirmedAt.toISOString(),
       createdAt: record.createdAt.toISOString(),
     };
+  }
+
+  private memberStatus(order: LessonOrder | undefined) {
+    if (!order) return 'awaiting_order' as const;
+    if (order.status === 'completed') return 'completed' as const;
+    if (['closed', 'refunded'].includes(order.status)) return 'closed' as const;
+    return 'awaiting_balance' as const;
   }
 
   private tierView(record: GroupMatchingPriceTierRecord): GroupMatchingPriceTier {

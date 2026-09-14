@@ -6,7 +6,11 @@ import type {
   UpdateLessonPackageRequest,
 } from '@lingcoo-edu-oms/contracts';
 
-import type { DatabaseExecutor, DatabaseHandle } from '../../../database/database.js';
+import type {
+  DatabaseExecutor,
+  DatabaseHandle,
+  DatabaseTransaction,
+} from '../../../database/database.js';
 import type { AuditContext, AuditWriter } from '../../audit/public.js';
 import type { InstitutionDirectory } from '../../organization/public.js';
 import type { LessonPackageVersionSnapshot } from '../domain/model.js';
@@ -15,6 +19,16 @@ import {
   LessonProductsRepository,
   type LessonPackageRecord,
 } from '../infrastructure/persistence/lesson-products.repository.js';
+
+export interface EnsureInternalLessonPackageForFormationInput {
+  institutionId: string;
+  formationId: string;
+  name: string;
+  description: string | null;
+  baseUnits: number;
+  bonusUnits?: number;
+  priceAmount: number;
+}
 
 export interface LessonPackageDirectory {
   listPurchasable(institutionId: string, now?: Date): Promise<LessonPackage[]>;
@@ -37,7 +51,14 @@ export interface LessonPackageDirectory {
   ): Promise<LessonPackageVersionSnapshot>;
 }
 
-export class LessonProductsService implements LessonPackageDirectory {
+export interface LessonPackageIssuer {
+  ensureInternalPackageForFormation(
+    input: EnsureInternalLessonPackageForFormationInput,
+    context: AuditContext,
+  ): Promise<LessonPackageVersionSnapshot>;
+}
+
+export class LessonProductsService implements LessonPackageDirectory, LessonPackageIssuer {
   constructor(
     private readonly database: DatabaseHandle,
     private readonly repository: LessonProductsRepository,
@@ -66,6 +87,65 @@ export class LessonProductsService implements LessonPackageDirectory {
     return records.map((record) => this.view(record));
   }
 
+  async ensureInternalPackageForFormation(
+    input: EnsureInternalLessonPackageForFormationInput,
+    context: AuditContext,
+  ): Promise<LessonPackageVersionSnapshot> {
+    this.assertInternalPackageInput(input);
+    return this.database.transaction(async (transaction) => {
+      await this.institutions.assertActiveInstitution(input.institutionId, transaction);
+      const existing = await this.repository.findByOrigin(
+        input.institutionId,
+        'group_formation',
+        input.formationId,
+        transaction,
+      );
+      if (existing) {
+        this.assertInternalPackage(existing, input);
+        const version = await this.repository.findVersion(
+          existing.id,
+          existing.revision,
+          transaction,
+        );
+        if (!version) {
+          throw new ApiError(409, 'LESSON_PACKAGE_VERSION_MISSING', '课时包版本快照缺失');
+        }
+        await this.auditInternalPackage(context, existing.id, input, false, transaction);
+        return version;
+      }
+
+      const result = await this.repository.createInternal(
+        {
+          institutionId: input.institutionId,
+          originType: 'group_formation',
+          originId: input.formationId,
+          name: input.name,
+          description: input.description,
+          baseUnits: input.baseUnits,
+          bonusUnits: input.bonusUnits ?? 0,
+          priceAmount: input.priceAmount,
+        },
+        transaction,
+      );
+      if (!result.record || !result.version) {
+        throw new ApiError(
+          409,
+          'LESSON_PACKAGE_INTERNAL_SOURCE_CONFLICT',
+          '内部课时包来源创建冲突',
+        );
+      }
+      this.assertInternalPackage(result.record, input);
+      await this.auditInternalPackage(
+        context,
+        result.record.id,
+        input,
+        result.created,
+        transaction,
+      );
+      return result.version;
+    });
+  }
+
   async getActiveVersion(
     institutionId: string,
     packageId: string,
@@ -74,6 +154,13 @@ export class LessonProductsService implements LessonPackageDirectory {
     const { record, version } = await this.currentVersion(institutionId, packageId, executor);
     if (record.status !== 'active') {
       throw new ApiError(409, 'LESSON_PACKAGE_INACTIVE', '课时包已停用，不能用于发放');
+    }
+    if (record.saleScope !== 'public') {
+      throw new ApiError(
+        409,
+        'LESSON_PACKAGE_INTERNAL_NOT_SALEABLE',
+        '系统生成的内部课时包不能用于普通售卖或手工发放',
+      );
     }
     return version;
   }
@@ -173,6 +260,13 @@ export class LessonProductsService implements LessonPackageDirectory {
           transaction,
         );
         if (!before) throw new ApiError(404, 'LESSON_PACKAGE_NOT_FOUND', '课时包不存在');
+        if (before.saleScope === 'internal') {
+          throw new ApiError(
+            409,
+            'LESSON_PACKAGE_INTERNAL_READONLY',
+            '内部来源课时包只能由来源业务用例维护',
+          );
+        }
         this.assertSaleWindow(
           input.saleStartsAt === undefined ? before.saleStartsAt : input.saleStartsAt,
           input.saleEndsAt === undefined ? before.saleEndsAt : input.saleEndsAt,
@@ -238,6 +332,79 @@ export class LessonProductsService implements LessonPackageDirectory {
         '线上可售课时包必须设置大于 0 的价格',
       );
     }
+  }
+
+  private assertInternalPackageInput(
+    input: EnsureInternalLessonPackageForFormationInput,
+  ): asserts input is EnsureInternalLessonPackageForFormationInput & { bonusUnits: number } {
+    if (!input.name.trim() || input.name.length > 160) {
+      throw new ApiError(400, 'LESSON_PACKAGE_NAME_INVALID', '内部课时包名称无效');
+    }
+    if (!Number.isInteger(input.baseUnits) || input.baseUnits <= 0) {
+      throw new ApiError(400, 'LESSON_PACKAGE_UNITS_INVALID', '基础课时必须为正整数');
+    }
+    const bonusUnits = input.bonusUnits ?? 0;
+    if (!Number.isInteger(bonusUnits) || bonusUnits < 0) {
+      throw new ApiError(400, 'LESSON_PACKAGE_UNITS_INVALID', '赠送课时必须为非负整数');
+    }
+    if (!Number.isInteger(input.priceAmount) || input.priceAmount < 0) {
+      throw new ApiError(400, 'LESSON_PACKAGE_PRICE_INVALID', '课时包价格必须为非负整数');
+    }
+  }
+
+  private assertInternalPackage(
+    record: LessonPackageRecord,
+    input: EnsureInternalLessonPackageForFormationInput,
+  ): void {
+    if (
+      record.saleScope !== 'internal' ||
+      record.originType !== 'group_formation' ||
+      record.originId !== input.formationId
+    ) {
+      throw new ApiError(409, 'LESSON_PACKAGE_INTERNAL_SOURCE_CONFLICT', '课时包来源不一致');
+    }
+    if (
+      record.baseUnits !== input.baseUnits ||
+      record.bonusUnits !== (input.bonusUnits ?? 0) ||
+      record.priceAmount !== input.priceAmount
+    ) {
+      throw new ApiError(
+        409,
+        'LESSON_PACKAGE_INTERNAL_DEFINITION_CONFLICT',
+        '同一成班来源的课时、赠送课时或金额不可变更',
+      );
+    }
+  }
+
+  private async auditInternalPackage(
+    context: AuditContext,
+    packageId: string,
+    input: EnsureInternalLessonPackageForFormationInput,
+    created: boolean,
+    transaction: DatabaseTransaction,
+  ): Promise<void> {
+    await this.audit.record(
+      {
+        ...context,
+        category: 'business',
+        action: created ? 'lesson-package.internal-created' : 'lesson-package.internal-reused',
+        resourceType: 'lesson.package',
+        resourceId: packageId,
+        changes: created
+          ? [
+              { field: 'originType', before: null, after: 'group_formation' },
+              { field: 'originId', before: null, after: input.formationId },
+            ]
+          : [],
+        metadata: {
+          formationId: input.formationId,
+          baseUnits: input.baseUnits,
+          bonusUnits: input.bonusUnits ?? 0,
+          priceAmount: input.priceAmount,
+        },
+      },
+      transaction,
+    );
   }
 
   private toDate(value: string | Date | null | undefined): Date | null {

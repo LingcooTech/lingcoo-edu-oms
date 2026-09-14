@@ -3,6 +3,7 @@ export type {
   LessonCommerceInstitutionDirectory,
   LessonCommercePaymentFacts,
   LessonCommercePayments,
+  GroupFormationOrderIssuer,
   WechatMiniPayerDirectory,
 } from './domain/model.js';
 export { createLessonCommerceModule, createLessonCommerceService } from './plugin.js';

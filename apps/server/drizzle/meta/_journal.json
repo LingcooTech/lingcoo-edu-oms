@@ -267,6 +267,27 @@
       "when": 1789294260813,
       "tag": "0037_groovy_exodus",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1789353423023,
+      "tag": "0038_big_polaris",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1789353505015,
+      "tag": "0039_open_darkstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1789353637492,
+      "tag": "0040_sour_fat_cobra",
+      "breakpoints": true
     }
   ]
 }

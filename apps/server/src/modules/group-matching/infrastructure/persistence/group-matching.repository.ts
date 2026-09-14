@@ -226,6 +226,47 @@ export class GroupMatchingRepository {
       .orderBy(asc(groupMatchingFormationMembers.createdAt));
   }
 
+  async attachFormationPackage(
+    formationId: string,
+    lessonPackageId: string,
+    lessonPackageVersion: number,
+    executor: DatabaseTransaction,
+  ) {
+    const [record] = await executor
+      .update(groupMatchingFormations)
+      .set({ lessonPackageId, lessonPackageVersion })
+      .where(
+        and(
+          eq(groupMatchingFormations.id, formationId),
+          sql`(${groupMatchingFormations.lessonPackageId} is null or ${groupMatchingFormations.lessonPackageId} = ${lessonPackageId})`,
+          sql`(${groupMatchingFormations.lessonPackageVersion} is null or ${groupMatchingFormations.lessonPackageVersion} = ${lessonPackageVersion})`,
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async attachFormationMemberOrder(
+    formationId: string,
+    studentId: string,
+    lessonOrderId: string,
+    status: GroupMatchingFormationMemberRecord['status'],
+    executor: DatabaseTransaction,
+  ) {
+    const [record] = await executor
+      .update(groupMatchingFormationMembers)
+      .set({ lessonOrderId, status, updatedAt: new Date() })
+      .where(
+        and(
+          eq(groupMatchingFormationMembers.formationId, formationId),
+          eq(groupMatchingFormationMembers.studentId, studentId),
+          sql`(${groupMatchingFormationMembers.lessonOrderId} is null or ${groupMatchingFormationMembers.lessonOrderId} = ${lessonOrderId})`,
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
   async createFormation(
     input: typeof groupMatchingFormations.$inferInsert,
     members: Array<Omit<typeof groupMatchingFormationMembers.$inferInsert, 'formationId'>>,

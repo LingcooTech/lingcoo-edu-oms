@@ -8,6 +8,7 @@ import type {
   RecordGroupMatchingDepositRequest,
 } from './api';
 import { groupMatchingApi } from './api';
+import { lessonCommerceApi } from '../orders/api';
 
 export const groupMatchingKeys = {
   all: ['education', 'group-matching'] as const,
@@ -117,5 +118,42 @@ export function useConfirmGroupMatchingFormation() {
       input: ConfirmGroupMatchingFormationRequest;
     }) => groupMatchingApi.confirmFormation(institutionId, campaignId, input),
     onSuccess: () => refresh(client),
+  });
+}
+
+export function useRecordGroupOfflineSettlement() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      institutionId,
+      orderId,
+      expectedRevision,
+      paymentMethod,
+      paidAt,
+      paymentReference,
+      paymentNote,
+      paidAmountMinor,
+    }: {
+      institutionId: string;
+      orderId: string;
+      expectedRevision: number;
+      paymentMethod: 'cash' | 'bank_transfer' | 'wechat_transfer' | 'other';
+      paidAt: string;
+      paymentReference: string | null;
+      paymentNote: string | null;
+      paidAmountMinor: number;
+    }) =>
+      lessonCommerceApi.recordGroupOfflineSettlement(institutionId, orderId, {
+        expectedRevision,
+        paymentMethod,
+        paidAt,
+        paymentReference,
+        paymentNote,
+        paidAmountMinor,
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: groupMatchingKeys.all });
+      void client.invalidateQueries({ queryKey: ['education', 'orders'] });
+    },
   });
 }

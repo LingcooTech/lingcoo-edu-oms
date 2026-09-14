@@ -154,7 +154,7 @@ export function GroupMatchingPage() {
   return (
     <PageContainer
       title="拼课管理"
-      description="以意向金锁定报名，达到成班人数后确认教学资源和固定快照；正式订单与课时发放后续由结算工作流生成。"
+      description="以意向金锁定报名，成班后自动生成内部课时包和学员订单；尾款结清后自动发放课时。"
       actions={
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => void campaigns.refetch()}>

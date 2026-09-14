@@ -263,6 +263,20 @@ export const groupMatchingFormationMemberSchema = z.object({
   depositAppliedMinor: nonnegativeIntegerSchema,
   balanceDueMinor: nonnegativeIntegerSchema,
   lessonOrderId: idSchema.nullable(),
+  lessonOrderNo: z.string().trim().min(1).max(64).nullable(),
+  lessonOrderRevision: revisionSchema.nullable(),
+  lessonOrderStatus: z
+    .enum([
+      'awaiting_settlement',
+      'pending_payment',
+      'paid_pending_grant',
+      'completed',
+      'closed',
+      'grant_failed',
+      'refunding',
+      'refunded',
+    ])
+    .nullable(),
   status: groupMatchingFormationMemberStatusSchema,
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,

@@ -48,6 +48,38 @@ export class LessonCommerceRepository {
     return record ?? null;
   }
 
+  async findGroupFormationStudent(
+    formationId: string,
+    studentId: string,
+    executor: DatabaseExecutor = this.database.db,
+  ) {
+    const [record] = await executor
+      .select()
+      .from(lessonCommerceOrders)
+      .where(
+        and(
+          eq(lessonCommerceOrders.sourceType, 'group_formation'),
+          eq(lessonCommerceOrders.sourceReferenceId, formationId),
+          eq(lessonCommerceOrders.studentId, studentId),
+        ),
+      )
+      .limit(1);
+    return record ?? null;
+  }
+
+  listGroupFormationOrders(formationId: string, executor: DatabaseExecutor = this.database.db) {
+    return executor
+      .select()
+      .from(lessonCommerceOrders)
+      .where(
+        and(
+          eq(lessonCommerceOrders.sourceType, 'group_formation'),
+          eq(lessonCommerceOrders.sourceReferenceId, formationId),
+        ),
+      )
+      .orderBy(lessonCommerceOrders.createdAt, lessonCommerceOrders.id);
+  }
+
   async lockById(id: string, executor: DatabaseTransaction) {
     const [record] = await executor
       .select()
@@ -71,6 +103,100 @@ export class LessonCommerceRepository {
           eq(lessonCommerceOrders.id, id),
           eq(lessonCommerceOrders.status, 'pending_payment'),
           sql`${lessonCommerceOrders.paymentIntentId} is null`,
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async prepareOnlineSettlement(
+    id: string,
+    expectedRevision: number,
+    provider: 'mock' | 'wechat_pay',
+    expiresAt: Date,
+    executor: DatabaseTransaction,
+  ) {
+    const [record] = await executor
+      .update(lessonCommerceOrders)
+      .set({
+        status: 'pending_payment',
+        channel: 'online',
+        provider,
+        paymentMethod: provider === 'wechat_pay' ? 'wechat_pay' : 'mock',
+        expiresAt,
+        closedAt: null,
+        revision: expectedRevision + 1,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(lessonCommerceOrders.id, id),
+          eq(lessonCommerceOrders.status, 'awaiting_settlement'),
+          eq(lessonCommerceOrders.sourceType, 'group_formation'),
+          eq(lessonCommerceOrders.revision, expectedRevision),
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async recordOfflineSettlement(
+    id: string,
+    expectedRevision: number,
+    input: {
+      paymentMethod: 'cash' | 'bank_transfer' | 'wechat_transfer' | 'other';
+      paymentReference?: string | null;
+      paymentNote?: string | null;
+      paidAt: Date;
+    },
+    executor: DatabaseTransaction,
+  ) {
+    const [record] = await executor
+      .update(lessonCommerceOrders)
+      .set({
+        status: 'paid_pending_grant',
+        channel: 'offline',
+        provider: null,
+        paymentMethod: input.paymentMethod,
+        paymentReference: input.paymentReference ?? null,
+        paymentNote: input.paymentNote ?? null,
+        paidAt: input.paidAt,
+        expiresAt: null,
+        failureCode: null,
+        failureMessage: null,
+        revision: expectedRevision + 1,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(lessonCommerceOrders.id, id),
+          eq(lessonCommerceOrders.status, 'awaiting_settlement'),
+          eq(lessonCommerceOrders.sourceType, 'group_formation'),
+          eq(lessonCommerceOrders.revision, expectedRevision),
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async restoreAwaitingSettlement(id: string, executor: DatabaseTransaction) {
+    const [record] = await executor
+      .update(lessonCommerceOrders)
+      .set({
+        status: 'awaiting_settlement',
+        channel: 'pending',
+        provider: null,
+        paymentMethod: 'pending',
+        paymentIntentId: null,
+        expiresAt: null,
+        revision: sql`${lessonCommerceOrders.revision} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(lessonCommerceOrders.id, id),
+          eq(lessonCommerceOrders.status, 'pending_payment'),
+          eq(lessonCommerceOrders.sourceType, 'group_formation'),
         ),
       )
       .returning();

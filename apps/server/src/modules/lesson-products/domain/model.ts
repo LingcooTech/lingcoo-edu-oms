@@ -5,6 +5,9 @@ export interface LessonPackageVersionSnapshot {
   version: number;
   name: string;
   description: string | null;
+  saleScope?: 'public' | 'internal';
+  originType?: 'group_formation' | null;
+  originId?: string | null;
   baseUnits: number;
   bonusUnits: number;
   priceAmount: number;

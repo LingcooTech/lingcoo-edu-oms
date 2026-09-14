@@ -51,6 +51,7 @@ import {
 } from './hooks';
 
 const STATUS: Record<LessonOrderStatus, { label: string; color: string }> = {
+  awaiting_settlement: { label: '待收尾款', color: 'gold' },
   pending_payment: { label: '待支付', color: 'gold' },
   paid_pending_grant: { label: '已支付·待发放', color: 'processing' },
   completed: { label: '已完成', color: 'success' },
@@ -61,6 +62,7 @@ const STATUS: Record<LessonOrderStatus, { label: string; color: string }> = {
 };
 
 const PAYMENT_METHOD: Record<LessonOrderPaymentMethod, string> = {
+  pending: '待收尾款',
   wechat_pay: '微信支付',
   mock: '模拟支付',
   cash: '现金',
@@ -68,6 +70,12 @@ const PAYMENT_METHOD: Record<LessonOrderPaymentMethod, string> = {
   wechat_transfer: '微信转账',
   other: '其他线下方式',
 };
+
+const CHANNEL = {
+  pending: { label: '待结算', color: 'gold' },
+  online: { label: '线上', color: 'blue' },
+  offline: { label: '线下', color: 'cyan' },
+} as const;
 
 const PRODUCT_TYPE: Record<LessonOrderProductType, string> = {
   lesson_package: '课时包',
@@ -312,7 +320,7 @@ export function OrdersPage() {
       <Alert
         showIcon
         type="info"
-        message="线下收款必须从这里补录订单；课时包形成课时流水，周期卡形成独立权益，赠课、补课和余额纠错仍走独立课时流水。"
+        title="线下收款必须从这里补录订单；课时包形成课时流水，周期卡形成独立权益，赠课、补课和余额纠错仍走独立课时流水。"
         style={{ marginBottom: 16 }}
       />
       <Card style={{ marginBottom: 16 }}>
@@ -395,11 +403,14 @@ export function OrdersPage() {
                 dataIndex: 'orderNo',
                 width: 240,
                 render: (value, record) => (
-                  <Space direction="vertical" size={0}>
+                  <Space orientation="vertical" size={0}>
                     <Typography.Text copyable strong>
                       {value}
                     </Typography.Text>
                     <Typography.Text type="secondary">{dateTime(record.createdAt)}</Typography.Text>
+                    {record.sourceType === 'group_formation' ? (
+                      <Tag color="purple">拼课成班订单</Tag>
+                    ) : null}
                   </Space>
                 ),
               },
@@ -407,10 +418,8 @@ export function OrdersPage() {
                 title: '渠道',
                 dataIndex: 'channel',
                 width: 90,
-                render: (value) => (
-                  <Tag color={value === 'online' ? 'blue' : 'cyan'}>
-                    {value === 'online' ? '线上' : '线下'}
-                  </Tag>
+                render: (value: keyof typeof CHANNEL) => (
+                  <Tag color={CHANNEL[value].color}>{CHANNEL[value].label}</Tag>
                 ),
               },
               {
@@ -418,7 +427,7 @@ export function OrdersPage() {
                 dataIndex: 'status',
                 width: 150,
                 render: (value: LessonOrderStatus, record) => (
-                  <Space direction="vertical" size={0}>
+                  <Space orientation="vertical" size={0}>
                     <Tag color={STATUS[value].color}>{STATUS[value].label}</Tag>
                     {record.failureMessage ? (
                       <Typography.Text type="danger" style={{ fontSize: 12 }}>
@@ -432,7 +441,7 @@ export function OrdersPage() {
                 title: '学员 / 家长',
                 width: 180,
                 render: (_, record) => (
-                  <Space direction="vertical" size={0}>
+                  <Space orientation="vertical" size={0}>
                     <Typography.Text strong>{record.studentName}</Typography.Text>
                     <Typography.Text type="secondary">{record.guardianName}</Typography.Text>
                   </Space>
@@ -443,7 +452,7 @@ export function OrdersPage() {
                 width: 280,
                 render: (_, record) =>
                   record.productType === 'lesson_package' ? (
-                    <Space direction="vertical" size={0}>
+                    <Space orientation="vertical" size={0}>
                       <Space size={6}>
                         <Tag color="blue">课时包</Tag>
                         <Typography.Text>{record.packageName}</Typography.Text>
@@ -453,7 +462,7 @@ export function OrdersPage() {
                       </Typography.Text>
                     </Space>
                   ) : (
-                    <Space direction="vertical" size={0}>
+                    <Space orientation="vertical" size={0}>
                       <Space size={6}>
                         <Tag color="purple">周期卡</Tag>
                         <Typography.Text>{record.periodCardProductName}</Typography.Text>
@@ -470,12 +479,33 @@ export function OrdersPage() {
                     </Space>
                   ),
               },
-              { title: '实收', dataIndex: 'amountMinor', width: 110, render: money },
               {
-                title: '支付方式',
-                dataIndex: 'paymentMethod',
-                width: 120,
-                render: (value: LessonOrderPaymentMethod) => PAYMENT_METHOD[value],
+                title: '金额',
+                width: 160,
+                render: (_, record) =>
+                  record.sourceType === 'group_formation' ? (
+                    <Space orientation="vertical" size={0}>
+                      <Typography.Text>总额 {money(record.amountMinor)}</Typography.Text>
+                      <Typography.Text type="secondary">
+                        意向金 {money(record.depositAppliedMinor)} · 尾款{' '}
+                        {money(record.balanceDueMinor)}
+                      </Typography.Text>
+                    </Space>
+                  ) : (
+                    <Typography.Text>{money(record.amountMinor)}</Typography.Text>
+                  ),
+              },
+              {
+                title: '支付 / 收款方式',
+                width: 150,
+                render: (_, record) => (
+                  <Space orientation="vertical" size={0}>
+                    <Typography.Text>{PAYMENT_METHOD[record.paymentMethod]}</Typography.Text>
+                    {record.paymentReference ? (
+                      <Typography.Text type="secondary">{record.paymentReference}</Typography.Text>
+                    ) : null}
+                  </Space>
+                ),
               },
               { title: '支付时间', dataIndex: 'paidAt', width: 160, render: dateTime },
               {
@@ -588,11 +618,11 @@ export function OrdersPage() {
         destroyOnHidden
       >
         {refundOrder ? (
-          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Space orientation="vertical" size={16} style={{ width: '100%' }}>
             <Alert
               showIcon
               type="warning"
-              message={
+              title={
                 refundOrder.status === 'refunding'
                   ? '订单正在退款处理中，本次操作将继续核验并完成原退款。'
                   : refundOrder.productType === 'lesson_package'
@@ -713,7 +743,7 @@ function OfflineOrderModal({
       <Alert
         type="warning"
         showIcon
-        message="请确认款项已经实际收到。提交后将创建正式订单，并自动发放课时或周期卡权益。"
+        title="请确认款项已经实际收到。提交后将创建正式订单，并自动发放课时或周期卡权益。"
         style={{ marginBottom: 16 }}
       />
       <Form form={form} layout="vertical">

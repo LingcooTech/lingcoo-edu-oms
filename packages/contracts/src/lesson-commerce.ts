@@ -17,6 +17,7 @@ import {
 } from './period-cards.js';
 
 export const lessonOrderStatusSchema = z.enum([
+  'awaiting_settlement',
   'pending_payment',
   'paid_pending_grant',
   'completed',
@@ -26,8 +27,10 @@ export const lessonOrderStatusSchema = z.enum([
   'refunded',
 ]);
 
-export const lessonOrderChannelSchema = z.enum(['online', 'offline']);
+export const lessonOrderSourceTypeSchema = z.enum(['normal', 'group_formation']);
+export const lessonOrderChannelSchema = z.enum(['pending', 'online', 'offline']);
 export const lessonOrderPaymentMethodSchema = z.enum([
+  'pending',
   'wechat_pay',
   'mock',
   'cash',
@@ -52,9 +55,13 @@ const lessonOrderCommonSchema = z.object({
   studentName: z.string().trim().min(1).max(120),
   guardianId: idSchema,
   guardianName: z.string().trim().min(1).max(120),
+  sourceType: lessonOrderSourceTypeSchema,
+  sourceReferenceId: idSchema.nullable(),
   channel: lessonOrderChannelSchema,
   listedAmountMinor: z.number().int().nonnegative(),
   amountMinor: z.number().int().positive(),
+  depositAppliedMinor: z.number().int().nonnegative(),
+  balanceDueMinor: z.number().int().nonnegative(),
   currency: z.literal('CNY'),
   provider: paymentProviderSchema.nullable(),
   paymentMethod: lessonOrderPaymentMethodSchema,
@@ -70,6 +77,7 @@ const lessonOrderCommonSchema = z.object({
   completedAt: isoDateTimeSchema.nullable(),
   closedAt: isoDateTimeSchema.nullable(),
   expiresAt: isoDateTimeSchema.nullable(),
+  paymentDeadlineAt: isoDateTimeSchema.nullable(),
   revision: z.number().int().positive(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
@@ -122,10 +130,28 @@ const periodCardOrderSchema = lessonOrderCommonSchema
     message: '限次周期卡订单必须包含使用上限',
   });
 
-export const lessonOrderSchema = z.discriminatedUnion('productType', [
+const lessonOrderResponseSchema = z.discriminatedUnion('productType', [
   lessonPackageOrderSchema,
   periodCardOrderSchema,
 ]);
+
+/**
+ * Existing normal-order responses predate group settlement fields. The response
+ * adapter preserves their meaning while group-formation orders always carry the
+ * server-calculated settlement values explicitly.
+ */
+export const lessonOrderSchema = z.preprocess((value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const order = value as Record<string, unknown>;
+  return {
+    ...order,
+    sourceType: order.sourceType ?? 'normal',
+    sourceReferenceId: order.sourceReferenceId ?? null,
+    depositAppliedMinor: order.depositAppliedMinor ?? 0,
+    balanceDueMinor: order.balanceDueMinor ?? order.amountMinor,
+    paymentDeadlineAt: order.paymentDeadlineAt ?? null,
+  };
+}, lessonOrderResponseSchema);
 
 export const createMiniStudentRequestSchema = z.object({
   institutionId: idSchema,
@@ -206,6 +232,19 @@ export const createOfflineLessonOrderRequestSchema = z.union([
   createOfflinePeriodCardOrderRequestSchema,
 ]);
 
+export const startGroupOrderOnlinePaymentRequestSchema = z.object({
+  provider: paymentProviderSchema.optional(),
+});
+
+export const recordGroupOrderOfflineSettlementRequestSchema = z.object({
+  expectedRevision: z.number().int().positive(),
+  paidAmountMinor: z.number().int().positive(),
+  paymentMethod: offlineLessonOrderPaymentMethodSchema,
+  paidAt: isoDateTimeSchema.optional(),
+  paymentReference: z.string().trim().min(1).max(160).nullable().optional().default(null),
+  paymentNote: z.string().trim().min(1).max(500).nullable().optional().default(null),
+});
+
 export const lessonOrderListQuerySchema = pageQuerySchema.extend({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().trim().min(1).max(160).optional(),
@@ -255,6 +294,7 @@ export const lessonReceiptSchema = z.object({
 });
 
 export type LessonOrderStatus = z.infer<typeof lessonOrderStatusSchema>;
+export type LessonOrderSourceType = z.infer<typeof lessonOrderSourceTypeSchema>;
 export type LessonOrderProductType = z.infer<typeof lessonOrderProductTypeSchema>;
 export type LessonOrderChannel = z.infer<typeof lessonOrderChannelSchema>;
 export type LessonOrderPaymentMethod = z.infer<typeof lessonOrderPaymentMethodSchema>;
@@ -263,6 +303,12 @@ export type CreateMiniStudentRequest = z.input<typeof createMiniStudentRequestSc
 export type MiniStudentListQuery = z.output<typeof miniStudentListQuerySchema>;
 export type CreateLessonOrderRequest = z.input<typeof createLessonOrderRequestSchema>;
 export type CreateOfflineLessonOrderRequest = z.input<typeof createOfflineLessonOrderRequestSchema>;
+export type StartGroupOrderOnlinePaymentRequest = z.input<
+  typeof startGroupOrderOnlinePaymentRequestSchema
+>;
+export type RecordGroupOrderOfflineSettlementRequest = z.input<
+  typeof recordGroupOrderOfflineSettlementRequestSchema
+>;
 export type LessonOrderListQuery = z.output<typeof lessonOrderListQuerySchema>;
 export type LessonOrderCheckout = z.infer<typeof lessonOrderCheckoutSchema>;
 export type LessonReceipt = z.infer<typeof lessonReceiptSchema>;

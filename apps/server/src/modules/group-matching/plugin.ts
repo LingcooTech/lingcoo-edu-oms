@@ -2,6 +2,8 @@ import type { FastifyPluginAsync } from 'fastify';
 
 import type { DatabaseHandle } from '../../database/database.js';
 import type { AuditWriter } from '../audit/public.js';
+import type { GroupFormationOrderIssuer } from '../lesson-commerce/public.js';
+import type { LessonPackageIssuer } from '../lesson-products/public.js';
 import type { InstitutionDirectory } from '../organization/public.js';
 import { registerGroupMatchingRoutes } from './api/routes.js';
 import { GroupMatchingService } from './application/group-matching.service.js';
@@ -16,6 +18,8 @@ export interface GroupMatchingDependencies {
   institutions: InstitutionDirectory;
   people: GroupMatchingPeopleDirectory;
   resources: GroupMatchingResourceDirectory;
+  packages: LessonPackageIssuer;
+  orders: GroupFormationOrderIssuer;
   audit: AuditWriter;
   service?: GroupMatchingService;
 }
@@ -27,6 +31,8 @@ export function createGroupMatchingService(dependencies: GroupMatchingDependenci
     dependencies.institutions,
     dependencies.people,
     dependencies.resources,
+    dependencies.packages,
+    dependencies.orders,
     dependencies.audit,
   );
 }

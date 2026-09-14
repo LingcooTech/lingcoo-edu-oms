@@ -15,6 +15,8 @@ import {
   guardiansForeignKeyTarget,
   identityUsersForeignKeyTarget,
   institutionsForeignKeyTarget,
+  lessonCommerceOrdersForeignKeyTarget,
+  lessonPackageTemplatesForeignKeyTarget,
   studentsForeignKeyTarget,
   teachersForeignKeyTarget,
   teachingCampusesForeignKeyTarget,
@@ -225,7 +227,10 @@ export const groupMatchingFormations = pgTable(
     totalUnits: integer('total_units').notNull(),
     durationMinutes: integer('duration_minutes').notNull(),
     balanceDueAt: timestamp('balance_due_at', { withTimezone: true }),
-    lessonPackageId: uuid('lesson_package_id'),
+    lessonPackageId: uuid('lesson_package_id').references(
+      () => lessonPackageTemplatesForeignKeyTarget.id,
+      { onDelete: 'restrict' },
+    ),
     lessonPackageVersion: integer('lesson_package_version'),
     confirmedByUserId: uuid('confirmed_by_user_id')
       .notNull()
@@ -257,6 +262,10 @@ export const groupMatchingFormations = pgTable(
       'group_matching_formations_teacher_snapshot_check',
       sql`(${table.teacherId} is null) = (${table.teacherNameSnapshot} is null)`,
     ),
+    check(
+      'group_matching_formations_package_snapshot_check',
+      sql`(${table.lessonPackageId} is null) = (${table.lessonPackageVersion} is null)`,
+    ),
   ],
 );
 
@@ -281,7 +290,10 @@ export const groupMatchingFormationMembers = pgTable(
     totalAmountMinor: integer('total_amount_minor').notNull(),
     depositAppliedMinor: integer('deposit_applied_minor').notNull(),
     balanceDueMinor: integer('balance_due_minor').notNull(),
-    lessonOrderId: uuid('lesson_order_id'),
+    lessonOrderId: uuid('lesson_order_id').references(
+      () => lessonCommerceOrdersForeignKeyTarget.id,
+      { onDelete: 'restrict' },
+    ),
     status: varchar('status', { length: 24 })
       .$type<'awaiting_order' | 'awaiting_balance' | 'completed' | 'closed'>()
       .notNull()

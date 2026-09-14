@@ -19,6 +19,7 @@ const COURSE_ID = '22222222-2222-4222-8222-222222222222';
 const CAMPUS_ID = '33333333-3333-4333-8333-333333333333';
 const CAMPAIGN_ID = '44444444-4444-4444-8444-444444444444';
 const ACTOR_ID = '55555555-5555-4555-8555-555555555555';
+const PACKAGE_ID = '12121212-1212-4212-8212-121212121212';
 const NOW = new Date('2026-09-13T08:00:00.000Z');
 
 const ENROLLMENT_IDS = [
@@ -185,6 +186,32 @@ class InMemoryGroupMatchingRepository {
   async listFormationMembers() {
     return this.memberRecords;
   }
+
+  async attachFormationPackage(
+    _formationId: string,
+    lessonPackageId: string,
+    lessonPackageVersion: number,
+  ) {
+    this.formationRecord = {
+      ...this.formationRecord!,
+      lessonPackageId,
+      lessonPackageVersion,
+    };
+    return this.formationRecord;
+  }
+
+  async attachFormationMemberOrder(
+    _formationId: string,
+    studentId: string,
+    lessonOrderId: string,
+    status: GroupMatchingFormationMemberRecord['status'],
+  ) {
+    const member = this.memberRecords.find((item) => item.studentId === studentId);
+    if (!member) return null;
+    member.lessonOrderId = lessonOrderId;
+    member.status = status;
+    return member;
+  }
 }
 
 function service(repository: InMemoryGroupMatchingRepository) {
@@ -193,6 +220,41 @@ function service(repository: InMemoryGroupMatchingRepository) {
     transaction: async (work: (transaction: unknown) => Promise<unknown>) => work({}),
   };
   const audit = { record: vi.fn(async () => undefined) };
+  const packages = {
+    ensureInternalPackageForFormation: vi.fn(async (input: { formationId: string }) => ({
+      id: '13131313-1313-4313-8313-131313131313',
+      packageId: PACKAGE_ID,
+      institutionId: INSTITUTION_ID,
+      version: 1,
+      name: '成班课时包',
+      description: null,
+      saleScope: 'internal',
+      originType: 'group_formation',
+      originId: input.formationId,
+      baseUnits: 16,
+      bonusUnits: 0,
+      priceAmount: 900,
+      currency: 'CNY',
+      onlineSaleEnabled: false,
+      saleStartsAt: null,
+      saleEndsAt: null,
+      status: 'active',
+      createdAt: NOW,
+    })),
+  };
+  let lessonOrders: Array<Record<string, unknown>> = [];
+  const orders = {
+    ensureGroupFormationOrders: vi.fn(async (input: { members: Array<{ studentId: string }> }) => {
+      lessonOrders = input.members.map((member, index) => ({
+        id: `14141414-1414-4414-8414-14141414141${index}`,
+        studentId: member.studentId,
+        orderNo: `GROUP-${index + 1}`,
+        status: 'awaiting_settlement',
+      }));
+      return lessonOrders;
+    }),
+    listGroupFormationOrders: vi.fn(async () => lessonOrders),
+  };
 
   return new GroupMatchingService(
     database as never,
@@ -200,6 +262,8 @@ function service(repository: InMemoryGroupMatchingRepository) {
     {} as never,
     {} as never,
     {} as never,
+    packages as never,
+    orders as never,
     audit as never,
     () => NOW,
   );

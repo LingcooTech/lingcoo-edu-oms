@@ -43,6 +43,11 @@ export const lessonCommerceOrders = pgTable(
     createdByUserId: uuid('created_by_user_id')
       .notNull()
       .references(() => identityUsersForeignKeyTarget.id, { onDelete: 'restrict' }),
+    sourceType: varchar('source_type', { length: 32 })
+      .$type<'normal' | 'group_formation'>()
+      .notNull()
+      .default('normal'),
+    sourceReferenceId: uuid('source_reference_id'),
     productType: varchar('product_type', { length: 24 })
       .$type<'lesson_package' | 'period_card'>()
       .notNull()
@@ -78,15 +83,19 @@ export const lessonCommerceOrders = pgTable(
       'immediate' | 'on_first_use'
     >(),
     channel: varchar('channel', { length: 16 })
-      .$type<'online' | 'offline'>()
+      .$type<'pending' | 'online' | 'offline'>()
       .notNull()
       .default('online'),
     listedAmountMinor: integer('listed_amount_minor').notNull(),
     amountMinor: integer('amount_minor').notNull(),
+    depositAppliedMinor: integer('deposit_applied_minor').notNull().default(0),
+    balanceDueMinor: integer('balance_due_minor').notNull().default(0),
     currency: varchar('currency', { length: 3 }).$type<'CNY'>().notNull().default('CNY'),
     provider: varchar('provider', { length: 32 }).$type<'mock' | 'wechat_pay'>(),
     paymentMethod: varchar('payment_method', { length: 32 })
-      .$type<'wechat_pay' | 'mock' | 'cash' | 'bank_transfer' | 'wechat_transfer' | 'other'>()
+      .$type<
+        'pending' | 'wechat_pay' | 'mock' | 'cash' | 'bank_transfer' | 'wechat_transfer' | 'other'
+      >()
       .notNull(),
     paymentReference: varchar('payment_reference', { length: 160 }),
     paymentNote: varchar('payment_note', { length: 500 }),
@@ -107,6 +116,7 @@ export const lessonCommerceOrders = pgTable(
     ),
     status: varchar('status', { length: 32 })
       .$type<
+        | 'awaiting_settlement'
         | 'pending_payment'
         | 'paid_pending_grant'
         | 'completed'
@@ -123,6 +133,7 @@ export const lessonCommerceOrders = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     closedAt: timestamp('closed_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
+    paymentDeadlineAt: timestamp('payment_deadline_at', { withTimezone: true }),
     revision: integer('revision').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -135,6 +146,11 @@ export const lessonCommerceOrders = pgTable(
     uniqueIndex('lesson_commerce_orders_period_card_entitlement_unique').on(
       table.periodCardEntitlementId,
     ),
+    uniqueIndex('lesson_commerce_orders_group_formation_student_unique')
+      .on(table.sourceType, table.sourceReferenceId, table.studentId)
+      .where(
+        sql`${table.sourceType} = 'group_formation' and ${table.sourceReferenceId} is not null`,
+      ),
     index('lesson_commerce_orders_guardian_created_idx').on(table.guardianId, table.createdAt),
     index('lesson_commerce_orders_institution_created_idx').on(
       table.institutionId,
@@ -145,9 +161,20 @@ export const lessonCommerceOrders = pgTable(
       'lesson_commerce_orders_product_snapshot_check',
       sql`(${table.productType} = 'lesson_package' and ${table.packageId} is not null and ${table.packageVersionId} is not null and ${table.packageVersion} > 0 and ${table.packageName} is not null and ${table.baseUnits} > 0 and ${table.bonusUnits} >= 0 and ${table.periodCardProductId} is null and ${table.periodCardProductVersionId} is null and ${table.periodCardProductVersion} is null and ${table.periodCardProductName} is null and ${table.periodCardMode} is null and ${table.periodCardUsageLimit} is null and ${table.periodCardDurationUnit} is null and ${table.periodCardDurationCount} is null and ${table.periodCardActivationPolicy} is null) or (${table.productType} = 'period_card' and ${table.packageId} is null and ${table.packageVersionId} is null and ${table.packageVersion} is null and ${table.packageName} is null and ${table.baseUnits} is null and ${table.bonusUnits} is null and ${table.periodCardProductId} is not null and ${table.periodCardProductVersionId} is not null and ${table.periodCardProductVersion} > 0 and ${table.periodCardProductName} is not null and ${table.periodCardMode} in ('limited','unlimited') and ((${table.periodCardMode} = 'limited' and ${table.periodCardUsageLimit} > 0) or (${table.periodCardMode} = 'unlimited' and ${table.periodCardUsageLimit} is null)) and ${table.periodCardDurationUnit} in ('day','week','month') and ${table.periodCardDurationCount} > 0 and ${table.periodCardActivationPolicy} in ('immediate','on_first_use'))`,
     ),
-    check('lesson_commerce_orders_channel_check', sql`${table.channel} in ('online','offline')`),
+    check(
+      'lesson_commerce_orders_source_check',
+      sql`(${table.sourceType} = 'normal' and ${table.sourceReferenceId} is null and ${table.depositAppliedMinor} = 0) or (${table.sourceType} = 'group_formation' and ${table.sourceReferenceId} is not null)`,
+    ),
+    check(
+      'lesson_commerce_orders_channel_check',
+      sql`${table.channel} in ('pending','online','offline')`,
+    ),
     check('lesson_commerce_orders_listed_amount_check', sql`${table.listedAmountMinor} >= 0`),
     check('lesson_commerce_orders_amount_check', sql`${table.amountMinor} > 0`),
+    check(
+      'lesson_commerce_orders_settlement_amount_check',
+      sql`${table.depositAppliedMinor} >= 0 and ${table.balanceDueMinor} >= 0 and ${table.amountMinor} = ${table.depositAppliedMinor} + ${table.balanceDueMinor}`,
+    ),
     check('lesson_commerce_orders_currency_check', sql`${table.currency} = 'CNY'`),
     check(
       'lesson_commerce_orders_provider_check',
@@ -155,11 +182,11 @@ export const lessonCommerceOrders = pgTable(
     ),
     check(
       'lesson_commerce_orders_payment_method_check',
-      sql`${table.paymentMethod} in ('wechat_pay','mock','cash','bank_transfer','wechat_transfer','other')`,
+      sql`${table.paymentMethod} in ('pending','wechat_pay','mock','cash','bank_transfer','wechat_transfer','other')`,
     ),
     check(
       'lesson_commerce_orders_channel_payment_check',
-      sql`(${table.channel} = 'online' and ${table.provider} is not null and ${table.paymentMethod} in ('wechat_pay','mock')) or (${table.channel} = 'offline' and ${table.provider} is null and ${table.paymentIntentId} is null and ${table.paymentMethod} in ('cash','bank_transfer','wechat_transfer','other'))`,
+      sql`(${table.channel} = 'pending' and ${table.provider} is null and ${table.paymentIntentId} is null and ${table.paymentMethod} = 'pending') or (${table.channel} = 'online' and ${table.provider} is not null and ${table.paymentMethod} in ('wechat_pay','mock')) or (${table.channel} = 'offline' and ${table.provider} is null and ${table.paymentIntentId} is null and ${table.paymentMethod} in ('cash','bank_transfer','wechat_transfer','other'))`,
     ),
     check(
       'lesson_commerce_orders_price_adjustment_check',
@@ -167,7 +194,7 @@ export const lessonCommerceOrders = pgTable(
     ),
     check(
       'lesson_commerce_orders_status_check',
-      sql`${table.status} in ('pending_payment','paid_pending_grant','completed','closed','grant_failed','refunding','refunded')`,
+      sql`${table.status} in ('awaiting_settlement','pending_payment','paid_pending_grant','completed','closed','grant_failed','refunding','refunded')`,
     ),
     check('lesson_commerce_orders_revision_check', sql`${table.revision} > 0`),
     check(
@@ -177,6 +204,10 @@ export const lessonCommerceOrders = pgTable(
     check(
       'lesson_commerce_orders_paid_check',
       sql`(${table.status} in ('paid_pending_grant','completed','grant_failed','refunding','refunded')) = (${table.paidAt} is not null)`,
+    ),
+    check(
+      'lesson_commerce_orders_awaiting_settlement_check',
+      sql`${table.status} <> 'awaiting_settlement' or (${table.sourceType} = 'group_formation' and ${table.balanceDueMinor} > 0 and ${table.channel} = 'pending')`,
     ),
     check(
       'lesson_commerce_orders_completed_check',

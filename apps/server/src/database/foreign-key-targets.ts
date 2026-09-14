@@ -40,6 +40,10 @@ export const lessonPackageVersionsForeignKeyTarget = pgTable('lesson_package_ver
   id: uuid('id').primaryKey(),
 });
 
+export const lessonCommerceOrdersForeignKeyTarget = pgTable('lesson_commerce_orders', {
+  id: uuid('id').primaryKey(),
+});
+
 export const lessonAccountsForeignKeyTarget = pgTable('lesson_accounts', {
   id: uuid('id').primaryKey(),
 });

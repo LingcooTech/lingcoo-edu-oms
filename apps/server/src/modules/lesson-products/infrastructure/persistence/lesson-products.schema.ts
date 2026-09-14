@@ -28,6 +28,12 @@ export const lessonPackageTemplates = pgTable(
       .references(() => institutionsForeignKeyTarget.id, { onDelete: 'restrict' }),
     name: varchar('name', { length: 160 }).notNull(),
     description: text('description'),
+    saleScope: varchar('sale_scope', { length: 20 })
+      .$type<'public' | 'internal'>()
+      .notNull()
+      .default('public'),
+    originType: varchar('origin_type', { length: 40 }).$type<'group_formation'>(),
+    originId: uuid('origin_id'),
     baseUnits: integer('base_units').notNull(),
     bonusUnits: integer('bonus_units').notNull().default(0),
     priceAmount: integer('price_amount').notNull().default(0),
@@ -47,10 +53,23 @@ export const lessonPackageTemplates = pgTable(
       table.institutionId,
       table.name,
     ),
+    uniqueIndex('lesson_package_templates_institution_origin_unique').on(
+      table.institutionId,
+      table.originType,
+      table.originId,
+    ),
     index('lesson_package_templates_institution_status_idx').on(table.institutionId, table.status),
     check('lesson_package_templates_base_units_check', sql`${table.baseUnits} > 0`),
     check('lesson_package_templates_bonus_units_check', sql`${table.bonusUnits} >= 0`),
     check('lesson_package_templates_price_amount_check', sql`${table.priceAmount} >= 0`),
+    check(
+      'lesson_package_templates_origin_shape_check',
+      sql`(${table.saleScope} = 'public' and ${table.originType} is null and ${table.originId} is null) or (${table.saleScope} = 'internal' and ${table.originType} = 'group_formation' and ${table.originId} is not null)`,
+    ),
+    check(
+      'lesson_package_templates_internal_sale_check',
+      sql`${table.saleScope} <> 'internal' or not ${table.onlineSaleEnabled}`,
+    ),
     check(
       'lesson_package_templates_online_price_check',
       sql`not ${table.onlineSaleEnabled} or ${table.priceAmount} > 0`,
@@ -82,6 +101,9 @@ export const lessonPackageVersions = pgTable(
     version: integer('version').notNull(),
     name: varchar('name', { length: 160 }).notNull(),
     description: text('description'),
+    saleScope: varchar('sale_scope', { length: 20 }).$type<'public' | 'internal'>().notNull(),
+    originType: varchar('origin_type', { length: 40 }).$type<'group_formation'>(),
+    originId: uuid('origin_id'),
     baseUnits: integer('base_units').notNull(),
     bonusUnits: integer('bonus_units').notNull().default(0),
     priceAmount: integer('price_amount').notNull(),
@@ -105,6 +127,14 @@ export const lessonPackageVersions = pgTable(
     check('lesson_package_versions_base_units_check', sql`${table.baseUnits} > 0`),
     check('lesson_package_versions_bonus_units_check', sql`${table.bonusUnits} >= 0`),
     check('lesson_package_versions_price_amount_check', sql`${table.priceAmount} >= 0`),
+    check(
+      'lesson_package_versions_origin_shape_check',
+      sql`(${table.saleScope} = 'public' and ${table.originType} is null and ${table.originId} is null) or (${table.saleScope} = 'internal' and ${table.originType} = 'group_formation' and ${table.originId} is not null)`,
+    ),
+    check(
+      'lesson_package_versions_internal_sale_check',
+      sql`${table.saleScope} <> 'internal' or not ${table.onlineSaleEnabled}`,
+    ),
     check('lesson_package_versions_currency_check', sql`${table.currency} = 'CNY'`),
     check(
       'lesson_package_versions_sale_window_check',

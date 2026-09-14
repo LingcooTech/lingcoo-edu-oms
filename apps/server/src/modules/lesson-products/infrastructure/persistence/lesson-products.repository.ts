@@ -15,6 +15,17 @@ import { lessonPackageTemplates, lessonPackageVersions } from './lesson-products
 export type LessonPackageRecord = typeof lessonPackageTemplates.$inferSelect;
 export type LessonPackageVersionRecord = typeof lessonPackageVersions.$inferSelect;
 
+export interface CreateInternalLessonPackageInput {
+  institutionId: string;
+  originType: 'group_formation';
+  originId: string;
+  name: string;
+  description: string | null;
+  baseUnits: number;
+  bonusUnits: number;
+  priceAmount: number;
+}
+
 export class LessonProductsRepository {
   constructor(private readonly database: DatabaseHandle) {}
 
@@ -51,6 +62,7 @@ export class LessonProductsRepository {
       .where(
         and(
           eq(lessonPackageTemplates.institutionId, institutionId),
+          eq(lessonPackageTemplates.saleScope, 'public'),
           eq(lessonPackageTemplates.status, 'active'),
           eq(lessonPackageTemplates.onlineSaleEnabled, true),
           gt(lessonPackageTemplates.priceAmount, 0),
@@ -117,6 +129,9 @@ export class LessonProductsRepository {
       .insert(lessonPackageTemplates)
       .values({
         ...input,
+        saleScope: 'public',
+        originType: null,
+        originId: null,
         saleStartsAt: this.toDate(input.saleStartsAt),
         saleEndsAt: this.toDate(input.saleEndsAt),
       })
@@ -154,6 +169,71 @@ export class LessonProductsRepository {
     return { record, version };
   }
 
+  async findByOrigin(
+    institutionId: string,
+    originType: 'group_formation',
+    originId: string,
+    executor: DatabaseExecutor = this.database.db,
+  ) {
+    const [record] = await executor
+      .select()
+      .from(lessonPackageTemplates)
+      .where(
+        and(
+          eq(lessonPackageTemplates.institutionId, institutionId),
+          eq(lessonPackageTemplates.originType, originType),
+          eq(lessonPackageTemplates.originId, originId),
+        ),
+      )
+      .limit(1);
+    return record ?? null;
+  }
+
+  async createInternal(input: CreateInternalLessonPackageInput, executor: DatabaseTransaction) {
+    const [record] = await executor
+      .insert(lessonPackageTemplates)
+      .values({
+        institutionId: input.institutionId,
+        name: input.name,
+        description: input.description,
+        saleScope: 'internal',
+        originType: input.originType,
+        originId: input.originId,
+        baseUnits: input.baseUnits,
+        bonusUnits: input.bonusUnits,
+        priceAmount: input.priceAmount,
+        currency: 'CNY',
+        onlineSaleEnabled: false,
+        saleStartsAt: null,
+        saleEndsAt: null,
+        status: 'active',
+      })
+      .onConflictDoNothing({
+        target: [
+          lessonPackageTemplates.institutionId,
+          lessonPackageTemplates.originType,
+          lessonPackageTemplates.originId,
+        ],
+      })
+      .returning();
+    if (record) {
+      return { record, created: true, version: await this.createVersion(record, executor) };
+    }
+
+    const existing = await this.findByOrigin(
+      input.institutionId,
+      input.originType,
+      input.originId,
+      executor,
+    );
+    if (!existing) return { record: null, created: false, version: null };
+    return {
+      record: existing,
+      created: false,
+      version: await this.findVersion(existing.id, existing.revision, executor),
+    };
+  }
+
   private async createVersion(record: LessonPackageRecord, executor: DatabaseTransaction) {
     const [version] = await executor
       .insert(lessonPackageVersions)
@@ -163,6 +243,9 @@ export class LessonProductsRepository {
         version: record.revision,
         name: record.name,
         description: record.description,
+        saleScope: record.saleScope,
+        originType: record.originType,
+        originId: record.originId,
         baseUnits: record.baseUnits,
         bonusUnits: record.bonusUnits,
         priceAmount: record.priceAmount,
