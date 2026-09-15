@@ -98,6 +98,58 @@ export const teachingResourceClassrooms = pgTable(
   ],
 );
 
+export const teachingResourceCourseSeries = pgTable(
+  'teaching_resource_course_series',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    institutionId: uuid('institution_id')
+      .notNull()
+      .references(() => institutionsForeignKeyTarget.id, { onDelete: 'restrict' }),
+    name: varchar('name', { length: 160 }).notNull(),
+    code: varchar('code', { length: 80 }),
+    slug: varchar('slug', { length: 120 }),
+    description: varchar('description', { length: 2_000 }),
+    status: varchar('status', { length: 20 })
+      .$type<'active' | 'inactive'>()
+      .notNull()
+      .default('active'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    revision: integer('revision').notNull().default(1),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('teaching_resource_course_series_institution_name_unique').on(
+      table.institutionId,
+      table.name,
+    ),
+    uniqueIndex('teaching_resource_course_series_institution_code_unique')
+      .on(table.institutionId, table.code)
+      .where(sql`${table.code} is not null`),
+    uniqueIndex('teaching_resource_course_series_institution_slug_unique')
+      .on(table.institutionId, table.slug)
+      .where(sql`${table.slug} is not null`),
+    uniqueIndex('teaching_resource_course_series_id_institution_unique').on(
+      table.id,
+      table.institutionId,
+    ),
+    index('teaching_resource_course_series_institution_status_idx').on(
+      table.institutionId,
+      table.status,
+    ),
+    check('teaching_resource_course_series_name_check', sql`length(trim(${table.name})) > 0`),
+    check(
+      'teaching_resource_course_series_identifier_check',
+      sql`${table.code} is not null or ${table.slug} is not null`,
+    ),
+    check(
+      'teaching_resource_course_series_status_check',
+      sql`${table.status} in ('active','inactive')`,
+    ),
+    check('teaching_resource_course_series_sort_order_check', sql`${table.sortOrder} >= 0`),
+    check('teaching_resource_course_series_revision_check', sql`${table.revision} > 0`),
+  ],
+);
+
 export const teachingResourceCourses = pgTable(
   'teaching_resource_courses',
   {
@@ -105,6 +157,7 @@ export const teachingResourceCourses = pgTable(
     institutionId: uuid('institution_id')
       .notNull()
       .references(() => institutionsForeignKeyTarget.id, { onDelete: 'restrict' }),
+    courseSeriesId: uuid('course_series_id'),
     code: varchar('code', { length: 80 }),
     name: varchar('name', { length: 160 }).notNull(),
     category: varchar('category', { length: 80 }),
@@ -131,6 +184,11 @@ export const teachingResourceCourses = pgTable(
       table.id,
       table.institutionId,
     ),
+    foreignKey({
+      columns: [table.courseSeriesId, table.institutionId],
+      foreignColumns: [teachingResourceCourseSeries.id, teachingResourceCourseSeries.institutionId],
+      name: 'teaching_resource_courses_series_institution_fk',
+    }).onDelete('restrict'),
     index('teaching_resource_courses_institution_status_idx').on(table.institutionId, table.status),
     check('teaching_resource_courses_name_check', sql`length(trim(${table.name})) > 0`),
     check(

@@ -13,6 +13,7 @@ import type { AuditContext } from '../../audit/public.js';
 import type { InstitutionDirectory } from '../../organization/public.js';
 import type { GuardianSelfDirectory, StudentOnboardingDirectory } from '../../people/public.js';
 import type { PaymentFact } from '../../payments/public.js';
+import type { NotificationPublisher } from '../../notifications/public.js';
 
 export interface LessonCommercePayments {
   createIntent(
@@ -52,6 +53,8 @@ export type LessonCommercePeopleDirectory = GuardianSelfDirectory & StudentOnboa
 export interface LessonCommercePaymentFacts {
   receive(fact: PaymentFact): Promise<void>;
 }
+
+export type LessonCommerceNotifications = NotificationPublisher;
 
 export interface GroupFormationOrderIssuer {
   ensureGroupFormationOrders(

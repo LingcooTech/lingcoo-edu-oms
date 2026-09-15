@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   check,
+  foreignKey,
   index,
   integer,
   pgTable,
@@ -151,6 +152,12 @@ export const lessonCommerceOrders = pgTable(
       .where(
         sql`${table.sourceType} = 'group_formation' and ${table.sourceReferenceId} is not null`,
       ),
+    uniqueIndex('lesson_commerce_orders_refund_snapshot_unique').on(
+      table.id,
+      table.institutionId,
+      table.studentId,
+      table.guardianId,
+    ),
     index('lesson_commerce_orders_guardian_created_idx').on(table.guardianId, table.createdAt),
     index('lesson_commerce_orders_institution_created_idx').on(
       table.institutionId,
@@ -212,6 +219,127 @@ export const lessonCommerceOrders = pgTable(
     check(
       'lesson_commerce_orders_completed_check',
       sql`(${table.status} = 'completed') = (${table.completedAt} is not null and ((${table.productType} = 'lesson_package' and ${table.grantMovementId} is not null and ${table.periodCardEntitlementId} is null) or (${table.productType} = 'period_card' and ${table.grantMovementId} is null and ${table.periodCardEntitlementId} is not null)))`,
+    ),
+  ],
+);
+
+export const lessonCommerceRefundRequests = pgTable(
+  'lesson_commerce_refund_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    requestNo: varchar('request_no', { length: 64 }).notNull(),
+    requestKey: varchar('request_key', { length: 120 }).notNull(),
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => lessonCommerceOrders.id, { onDelete: 'restrict' }),
+    orderNo: varchar('order_no', { length: 64 }).notNull(),
+    institutionId: uuid('institution_id')
+      .notNull()
+      .references(() => institutionsForeignKeyTarget.id, { onDelete: 'restrict' }),
+    studentId: uuid('student_id')
+      .notNull()
+      .references(() => studentsForeignKeyTarget.id, { onDelete: 'restrict' }),
+    studentName: varchar('student_name', { length: 120 }).notNull(),
+    guardianId: uuid('guardian_id')
+      .notNull()
+      .references(() => guardiansForeignKeyTarget.id, { onDelete: 'restrict' }),
+    guardianName: varchar('guardian_name', { length: 120 }).notNull(),
+    productType: varchar('product_type', { length: 24 })
+      .$type<'lesson_package' | 'period_card'>()
+      .notNull(),
+    channel: varchar('channel', { length: 16 }).$type<'online' | 'offline'>().notNull(),
+    amountMinor: integer('amount_minor').notNull(),
+    currency: varchar('currency', { length: 3 }).$type<'CNY'>().notNull().default('CNY'),
+    orderCompletedAt: timestamp('order_completed_at', { withTimezone: true }).notNull(),
+    reason: varchar('reason', { length: 500 }).notNull(),
+    status: varchar('status', { length: 32 })
+      .$type<
+        | 'requested'
+        | 'approved'
+        | 'processing'
+        | 'awaiting_offline_refund'
+        | 'completed'
+        | 'rejected'
+        | 'cancelled'
+        | 'failed'
+      >()
+      .notNull()
+      .default('requested'),
+    requestedByUserId: uuid('requested_by_user_id')
+      .notNull()
+      .references(() => identityUsersForeignKeyTarget.id, { onDelete: 'restrict' }),
+    reviewedByUserId: uuid('reviewed_by_user_id').references(
+      () => identityUsersForeignKeyTarget.id,
+      { onDelete: 'restrict' },
+    ),
+    reviewNote: varchar('review_note', { length: 500 }),
+    offlineRefundMethod: varchar('offline_refund_method', { length: 32 }).$type<
+      'cash' | 'bank_transfer' | 'wechat_transfer' | 'other'
+    >(),
+    offlineRefundReference: varchar('offline_refund_reference', { length: 160 }),
+    offlineRefundNote: varchar('offline_refund_note', { length: 500 }),
+    paymentRefundId: varchar('payment_refund_id', { length: 120 }),
+    failureStage: varchar('failure_stage', { length: 32 }).$type<
+      'entitlement_recovery' | 'funds_refund' | 'finalization'
+    >(),
+    failureCode: varchar('failure_code', { length: 120 }),
+    failureMessage: varchar('failure_message', { length: 500 }),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    entitlementRecoveredAt: timestamp('entitlement_recovered_at', { withTimezone: true }),
+    fundsRefundedAt: timestamp('funds_refunded_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    revision: integer('revision').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('lesson_commerce_refunds_request_no_unique').on(table.requestNo),
+    uniqueIndex('lesson_commerce_refunds_order_request_key_unique').on(
+      table.orderId,
+      table.requestKey,
+    ),
+    uniqueIndex('lesson_commerce_refunds_order_active_unique')
+      .on(table.orderId)
+      .where(
+        sql`${table.status} in ('requested','approved','processing','awaiting_offline_refund','failed')`,
+      ),
+    index('lesson_commerce_refunds_institution_status_idx').on(
+      table.institutionId,
+      table.status,
+      table.createdAt,
+    ),
+    foreignKey({
+      name: 'lesson_commerce_refunds_order_snapshot_fk',
+      columns: [table.orderId, table.institutionId, table.studentId, table.guardianId],
+      foreignColumns: [
+        lessonCommerceOrders.id,
+        lessonCommerceOrders.institutionId,
+        lessonCommerceOrders.studentId,
+        lessonCommerceOrders.guardianId,
+      ],
+    }).onDelete('restrict'),
+    check(
+      'lesson_commerce_refunds_status_check',
+      sql`${table.status} in ('requested','approved','processing','awaiting_offline_refund','completed','rejected','cancelled','failed')`,
+    ),
+    check('lesson_commerce_refunds_channel_check', sql`${table.channel} in ('online','offline')`),
+    check('lesson_commerce_refunds_amount_check', sql`${table.amountMinor} > 0`),
+    check('lesson_commerce_refunds_currency_check', sql`${table.currency} = 'CNY'`),
+    check('lesson_commerce_refunds_revision_check', sql`${table.revision} > 0`),
+    check(
+      'lesson_commerce_refunds_failure_check',
+      sql`(${table.status} = 'failed') = (${table.failureStage} is not null and ${table.failureCode} is not null and ${table.failureMessage} is not null)`,
+    ),
+    check(
+      'lesson_commerce_refunds_terminal_time_check',
+      sql`(${table.status} = 'completed') = (${table.completedAt} is not null) and (${table.status} = 'rejected') = (${table.rejectedAt} is not null) and (${table.status} = 'cancelled') = (${table.cancelledAt} is not null)`,
+    ),
+    check(
+      'lesson_commerce_refunds_offline_check',
+      sql`${table.status} <> 'awaiting_offline_refund' or (${table.channel} = 'offline' and ${table.entitlementRecoveredAt} is not null)`,
     ),
   ],
 );

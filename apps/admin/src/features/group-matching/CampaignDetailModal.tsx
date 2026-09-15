@@ -2,6 +2,7 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   FormOutlined,
+  StopOutlined,
   UserAddOutlined,
 } from '@ant-design/icons';
 import { App, Button, Descriptions, Divider, Modal, Space, Tag, Typography } from 'antd';
@@ -10,8 +11,11 @@ import { useState } from 'react';
 import { AsyncState } from '../../components/AsyncState';
 import type { GroupMatchingEnrollment } from './api';
 import { DepositModal } from './DepositModal';
+import { DepositRefundModal } from './DepositRefundModal';
 import { EnrollmentModal, EnrollmentTable } from './EnrollmentManagement';
+import { EnrollmentWithdrawalModal } from './EnrollmentWithdrawalModal';
 import { FormationModal, FormationSnapshot } from './FormationModal';
+import { CampaignCancelModal } from './CampaignCancelModal';
 import { campaignStatusMeta, dateTime, errorMessage, money } from './formatters';
 import { useGroupMatchingCampaign, usePublishGroupMatchingCampaign } from './hooks';
 
@@ -33,7 +37,12 @@ export function CampaignDetailModal({
   const detail = useGroupMatchingCampaign(institutionId, campaignId);
   const [enrollmentOpen, setEnrollmentOpen] = useState(false);
   const [depositEnrollment, setDepositEnrollment] = useState<GroupMatchingEnrollment | null>(null);
+  const [refundEnrollment, setRefundEnrollment] = useState<GroupMatchingEnrollment | null>(null);
+  const [withdrawEnrollment, setWithdrawEnrollment] = useState<GroupMatchingEnrollment | null>(
+    null,
+  );
   const [formationOpen, setFormationOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const publish = usePublishGroupMatchingCampaign();
   const campaign = detail.data?.campaign;
 
@@ -97,6 +106,11 @@ export function CampaignDetailModal({
                   确认成班
                 </Button>
               )}
+              {canManage && ['draft', 'recruiting', 'ready'].includes(campaign.status) && (
+                <Button danger icon={<StopOutlined />} onClick={() => setCancelOpen(true)}>
+                  取消拼课
+                </Button>
+              )}
             </Space>
             <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }}>
               <Descriptions.Item label="目标人数">
@@ -123,6 +137,11 @@ export function CampaignDetailModal({
                   {campaign.notes}
                 </Descriptions.Item>
               )}
+              {campaign.cancellationReason && (
+                <Descriptions.Item label="取消原因" span={3}>
+                  {campaign.cancellationReason}
+                </Descriptions.Item>
+              )}
             </Descriptions>
             <Divider titlePlacement="start">人数与价格</Divider>
             <Space wrap>
@@ -139,6 +158,8 @@ export function CampaignDetailModal({
               detail={detail.data}
               canManage={canManage}
               onRecordDeposit={setDepositEnrollment}
+              onRefundDeposit={setRefundEnrollment}
+              onWithdraw={setWithdrawEnrollment}
             />
             {institutionId && campaign.status === 'formed' && detail.data.formation && (
               <FormationSnapshot
@@ -164,6 +185,30 @@ export function CampaignDetailModal({
           campaign={campaign}
           enrollment={depositEnrollment}
           onClose={() => setDepositEnrollment(null)}
+        />
+      )}
+      {campaign && institutionId && (
+        <DepositRefundModal
+          institutionId={institutionId}
+          campaign={campaign}
+          enrollment={refundEnrollment}
+          onClose={() => setRefundEnrollment(null)}
+        />
+      )}
+      {campaign && institutionId && (
+        <EnrollmentWithdrawalModal
+          institutionId={institutionId}
+          campaign={campaign}
+          enrollment={withdrawEnrollment}
+          onClose={() => setWithdrawEnrollment(null)}
+        />
+      )}
+      {campaign && institutionId && (
+        <CampaignCancelModal
+          institutionId={institutionId}
+          campaign={campaign}
+          open={cancelOpen}
+          onClose={() => setCancelOpen(false)}
         />
       )}
       {campaign && institutionId && detail.data && (

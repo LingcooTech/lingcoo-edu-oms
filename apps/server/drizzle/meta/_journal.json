@@ -288,6 +288,20 @@
       "when": 1789353637492,
       "tag": "0040_sour_fat_cobra",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1789393489741,
+      "tag": "0041_pale_imperial_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1789470455727,
+      "tag": "0042_tiresome_zeigeist",
+      "breakpoints": true
     }
   ]
 }

@@ -21,6 +21,7 @@ export const enrollmentStatusMeta: Record<
 > = {
   pending_deposit: { label: '待收意向金', color: 'gold' },
   deposit_paid: { label: '意向金已付', color: 'green' },
+  deposit_refunded: { label: '意向金已退', color: 'cyan' },
   selected: { label: '已入选', color: 'blue' },
   waitlisted: { label: '候补', color: 'default' },
   withdrawn: { label: '已退出', color: 'default' },

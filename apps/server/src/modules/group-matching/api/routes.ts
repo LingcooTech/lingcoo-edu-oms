@@ -5,9 +5,12 @@ import {
   confirmGroupMatchingFormationRequestSchema,
   createGroupMatchingCampaignRequestSchema,
   groupMatchingCampaignListQuerySchema,
+  idempotencyKeySchema,
   publishGroupMatchingCampaignRequestSchema,
   recordGroupMatchingDepositRequestSchema,
+  recordGroupMatchingDepositRefundRequestSchema,
   updateGroupMatchingCampaignRequestSchema,
+  withdrawGroupMatchingEnrollmentRequestSchema,
 } from '@lingcoo-edu-oms/contracts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -56,6 +59,36 @@ export async function registerGroupMatchingRoutes(
             actor(request),
           ),
         );
+    },
+  );
+  app.post(
+    '/api/institutions/:institutionId/group-matching/campaigns/:campaignId/enrollments/:enrollmentId/actions/refund-deposit',
+    { config: { access: educationAccess('education.enrollments.manage') } },
+    async (request) => {
+      const params = parse(enrollmentParams, request.params);
+      return service.recordDepositRefund(
+        params.institutionId,
+        params.campaignId,
+        params.enrollmentId,
+        parse(recordGroupMatchingDepositRefundRequestSchema, request.body),
+        idempotencyKey(request),
+        actor(request),
+      );
+    },
+  );
+  app.post(
+    '/api/institutions/:institutionId/group-matching/campaigns/:campaignId/enrollments/:enrollmentId/actions/withdraw',
+    { config: { access: educationAccess('education.enrollments.manage') } },
+    async (request) => {
+      const params = parse(enrollmentParams, request.params);
+      return service.withdrawEnrollment(
+        params.institutionId,
+        params.campaignId,
+        params.enrollmentId,
+        parse(withdrawGroupMatchingEnrollmentRequestSchema, request.body),
+        idempotencyKey(request),
+        actor(request),
+      );
     },
   );
   app.patch(
@@ -160,6 +193,14 @@ function parse<T>(schema: z.ZodType<T>, input: unknown): T {
     throw new ApiError(400, 'VALIDATION_ERROR', '请求参数校验失败', z.flattenError(result.error));
   }
   return result.data;
+}
+
+function firstHeader(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function idempotencyKey(request: FastifyRequest): string {
+  return parse(idempotencyKeySchema, firstHeader(request.headers['idempotency-key']));
 }
 
 function actor(request: FastifyRequest) {

@@ -6,6 +6,8 @@ import type {
   CreateGroupMatchingCampaignRequest,
   GroupMatchingCampaignListQuery,
   RecordGroupMatchingDepositRequest,
+  RecordGroupMatchingDepositRefundRequest,
+  WithdrawGroupMatchingEnrollmentRequest,
 } from './api';
 import { groupMatchingApi } from './api';
 import { lessonCommerceApi } from '../orders/api';
@@ -101,6 +103,78 @@ export function useRecordGroupMatchingDeposit() {
       enrollmentId: string;
       input: RecordGroupMatchingDepositRequest;
     }) => groupMatchingApi.recordDeposit(institutionId, campaignId, enrollmentId, input),
+    onSuccess: () => refresh(client),
+  });
+}
+
+export function useRecordGroupMatchingDepositRefund() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      institutionId,
+      campaignId,
+      enrollmentId,
+      input,
+      idempotencyKey,
+    }: {
+      institutionId: string;
+      campaignId: string;
+      enrollmentId: string;
+      input: RecordGroupMatchingDepositRefundRequest;
+      idempotencyKey: string;
+    }) =>
+      groupMatchingApi.recordDepositRefund(
+        institutionId,
+        campaignId,
+        enrollmentId,
+        input,
+        idempotencyKey,
+      ),
+    onSuccess: () => refresh(client),
+  });
+}
+
+export function useWithdrawGroupMatchingEnrollment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      institutionId,
+      campaignId,
+      enrollmentId,
+      input,
+      idempotencyKey,
+    }: {
+      institutionId: string;
+      campaignId: string;
+      enrollmentId: string;
+      input: WithdrawGroupMatchingEnrollmentRequest;
+      idempotencyKey: string;
+    }) =>
+      groupMatchingApi.withdrawEnrollment(
+        institutionId,
+        campaignId,
+        enrollmentId,
+        input,
+        idempotencyKey,
+      ),
+    onSuccess: () => refresh(client),
+  });
+}
+
+export function useCancelGroupMatchingCampaign() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      institutionId,
+      campaignId,
+      expectedRevision,
+      reason,
+    }: {
+      institutionId: string;
+      campaignId: string;
+      expectedRevision: number;
+      reason: string;
+    }) => groupMatchingApi.cancel(institutionId, campaignId, { expectedRevision, reason }),
     onSuccess: () => refresh(client),
   });
 }

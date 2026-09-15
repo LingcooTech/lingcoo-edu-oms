@@ -46,9 +46,9 @@ import {
   useCreateOfflineLessonOrder,
   useLessonOrders,
   useLessonReceipt,
-  useRefundLessonOrder,
   useRetryLessonOrderGrant,
 } from './hooks';
+import { RefundWorkflowModal } from './RefundWorkflowModal';
 
 const STATUS: Record<LessonOrderStatus, { label: string; color: string }> = {
   awaiting_settlement: { label: '待收尾款', color: 'gold' },
@@ -114,8 +114,6 @@ type OfflineOrderForm = {
   priceAdjustmentReason?: string;
 };
 
-type RefundForm = { reason: string };
-
 function money(amountMinor: number) {
   return `¥${(amountMinor / 100).toFixed(2)}`;
 }
@@ -142,7 +140,6 @@ function nullable(value?: string) {
 export function OrdersPage() {
   const { message } = App.useApp();
   const [form] = Form.useForm<OfflineOrderForm>();
-  const [refundForm] = Form.useForm<RefundForm>();
   const canManage = useCan('education.orders.manage');
   const organization = useOrganizationProfile();
   const institutions = useInstitutions({ page: 1, pageSize: 100, status: 'active' });
@@ -184,7 +181,6 @@ export function OrdersPage() {
   const retry = useRetryLessonOrderGrant();
   const createOffline = useCreateOfflineLessonOrder();
   const receiptRequest = useLessonReceipt();
-  const refund = useRefundLessonOrder();
 
   useEffect(() => {
     if (!institutionId && institutions.data?.items[0]) {
@@ -546,17 +542,18 @@ export function OrdersPage() {
                         重试发放
                       </Button>
                     ) : null}
-                    {canManage && ['completed', 'refunding'].includes(record.status) ? (
+                    {canManage &&
+                    record.sourceType === 'normal' &&
+                    ['completed', 'refunding'].includes(record.status) ? (
                       <Button
                         type="link"
                         danger
                         icon={<RollbackOutlined />}
                         onClick={() => {
-                          refundForm.resetFields();
                           setRefundOrder(record);
                         }}
                       >
-                        {record.status === 'refunding' ? '继续退款' : '退款'}
+                        {record.status === 'refunding' ? '继续退款' : '退款流程'}
                       </Button>
                     ) : null}
                   </Space>
@@ -585,80 +582,11 @@ export function OrdersPage() {
         onSubmit={() => void submitOfflineOrder()}
       />
 
-      <Modal
-        title="退款并回收权益"
-        open={Boolean(refundOrder)}
-        okText={refundOrder?.channel === 'online' ? '确认原路退款' : '确认已线下退款'}
-        cancelText="取消"
-        okButtonProps={{ danger: true }}
-        confirmLoading={refund.isPending}
-        onCancel={() => setRefundOrder(null)}
-        onOk={async () => {
-          if (!institutionId || !refundOrder) return;
-          try {
-            const values = await refundForm.validateFields();
-            await refund.mutateAsync({
-              institutionId,
-              orderId: refundOrder.id,
-              command: {
-                expectedRevision: refundOrder.revision,
-                reason: values.reason.trim(),
-              },
-            });
-            message.success(
-              refundOrder.productType === 'lesson_package'
-                ? '退款完成，订单课时已整批回收'
-                : '退款完成，周期卡权益已撤销',
-            );
-            setRefundOrder(null);
-          } catch (error) {
-            if (error instanceof Error) message.error(error.message);
-          }
-        }}
-        destroyOnHidden
-      >
-        {refundOrder ? (
-          <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-            <Alert
-              showIcon
-              type="warning"
-              title={
-                refundOrder.status === 'refunding'
-                  ? '订单正在退款处理中，本次操作将继续核验并完成原退款。'
-                  : refundOrder.productType === 'lesson_package'
-                    ? '仅允许整笔退回完全未消费、未扣回的订单课时。'
-                    : '仅允许退回从未使用的周期卡；已使用权益必须人工核算。'
-              }
-              description={
-                refundOrder.channel === 'online'
-                  ? '系统将先回收权益，再按原支付交易发起全额退款。支付结果异常时订单会保留“退款处理中”，禁止重复随意处理。'
-                  : `请确认已按“${PAYMENT_METHOD[refundOrder.paymentMethod]}”向客户退回 ${money(refundOrder.amountMinor)}；系统随后回收对应权益。`
-              }
-            />
-            <Descriptions bordered size="small" column={1}>
-              <Descriptions.Item label="订单号">{refundOrder.orderNo}</Descriptions.Item>
-              <Descriptions.Item label="学员">{refundOrder.studentName}</Descriptions.Item>
-              <Descriptions.Item label="退款金额">
-                {money(refundOrder.amountMinor)}
-              </Descriptions.Item>
-            </Descriptions>
-            <Form form={refundForm} layout="vertical">
-              <Form.Item
-                name="reason"
-                label="退款原因"
-                rules={[{ required: true, min: 2, message: '请填写至少 2 个字的退款原因' }]}
-              >
-                <Input.TextArea
-                  rows={3}
-                  maxLength={500}
-                  showCount
-                  placeholder="说明退款及权益回收原因"
-                />
-              </Form.Item>
-            </Form>
-          </Space>
-        ) : null}
-      </Modal>
+      <RefundWorkflowModal
+        institutionId={institutionId}
+        order={refundOrder}
+        onClose={() => setRefundOrder(null)}
+      />
 
       <Modal
         title="订单收据"

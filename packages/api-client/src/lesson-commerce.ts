@@ -7,12 +7,22 @@ import {
   lessonReceiptSchema,
   retryLessonOrderGrantRequestSchema,
   refundLessonOrderRequestSchema,
+  createLessonOrderRefundRequestSchema,
+  reviewLessonOrderRefundRequestSchema,
+  cancelLessonOrderRefundRequestSchema,
+  confirmOfflineLessonOrderRefundRequestSchema,
+  lessonOrderRefundListSchema,
+  lessonOrderRefundSchema,
   recordGroupOrderOfflineSettlementRequestSchema,
   type LessonOrderListQuery,
   type CreateOfflineLessonOrderRequest,
   type RecordGroupOrderOfflineSettlementRequest,
   type RetryLessonOrderGrantRequest,
   type RefundLessonOrderRequest,
+  type CreateLessonOrderRefundRequest,
+  type ReviewLessonOrderRefundRequest,
+  type CancelLessonOrderRefundRequest,
+  type ConfirmOfflineLessonOrderRefundRequest,
   startGroupOrderOnlinePaymentRequestSchema,
   type StartGroupOrderOnlinePaymentRequest,
   lessonOrderCheckoutSchema,
@@ -68,6 +78,56 @@ export function createLessonCommerceApi(client: ApiClient) {
         path: `${collectionPath(institutionId)}/${pathId(orderId)}/actions/refund`,
         body: refundLessonOrderRequestSchema.parse(input),
         schema: lessonOrderSchema,
+      });
+    },
+    listRefunds(institutionId: string, orderId: string) {
+      return client.request({
+        path: `${collectionPath(institutionId)}/${pathId(orderId)}/refunds`,
+        schema: lessonOrderRefundListSchema,
+      });
+    },
+    requestRefund(institutionId: string, orderId: string, input: CreateLessonOrderRefundRequest) {
+      return client.request({
+        method: 'POST',
+        path: `${collectionPath(institutionId)}/${pathId(orderId)}/refunds`,
+        body: createLessonOrderRefundRequestSchema.parse(input),
+        schema: lessonOrderRefundSchema,
+      });
+    },
+    approveRefund(institutionId: string, refundId: string, input: ReviewLessonOrderRefundRequest) {
+      return client.request({
+        method: 'POST',
+        path: `/api/institutions/${pathId(institutionId)}/refunds/${pathId(refundId)}/actions/approve`,
+        body: reviewLessonOrderRefundRequestSchema.parse(input),
+        schema: lessonOrderRefundSchema,
+      });
+    },
+    rejectRefund(institutionId: string, refundId: string, input: ReviewLessonOrderRefundRequest) {
+      return client.request({
+        method: 'POST',
+        path: `/api/institutions/${pathId(institutionId)}/refunds/${pathId(refundId)}/actions/reject`,
+        body: reviewLessonOrderRefundRequestSchema.parse(input),
+        schema: lessonOrderRefundSchema,
+      });
+    },
+    cancelRefund(institutionId: string, refundId: string, input: CancelLessonOrderRefundRequest) {
+      return client.request({
+        method: 'POST',
+        path: `/api/institutions/${pathId(institutionId)}/refunds/${pathId(refundId)}/actions/cancel`,
+        body: cancelLessonOrderRefundRequestSchema.parse(input),
+        schema: lessonOrderRefundSchema,
+      });
+    },
+    confirmOfflineRefund(
+      institutionId: string,
+      refundId: string,
+      input: ConfirmOfflineLessonOrderRefundRequest,
+    ) {
+      return client.request({
+        method: 'POST',
+        path: `/api/institutions/${pathId(institutionId)}/refunds/${pathId(refundId)}/actions/confirm-offline`,
+        body: confirmOfflineLessonOrderRefundRequestSchema.parse(input),
+        schema: lessonOrderRefundSchema,
       });
     },
     startGroupOnlinePayment(

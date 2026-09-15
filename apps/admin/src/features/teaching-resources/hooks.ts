@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   ClassGroupListQuery,
+  CourseSeriesListQuery,
+  CreateCourseSeriesRequest,
   CreateCampusRequest,
   CreateClassGroupRequest,
   CreateClassroomRequest,
@@ -15,6 +17,7 @@ import type {
   UpdateClassGroupRequest,
   UpdateClassroomRequest,
   UpdateCourseRequest,
+  UpdateCourseSeriesRequest,
   UpdateScheduleRequest,
   UpdateSessionResourceContextRequest,
 } from '@lingcoo-edu-oms/contracts';
@@ -25,6 +28,8 @@ export const teachingResourceKeys = {
   all: ['education', 'teaching-resources'] as const,
   courses: (institutionId: string, query: Partial<CourseListQuery>) =>
     [...teachingResourceKeys.all, 'courses', institutionId, query] as const,
+  courseSeries: (institutionId: string, query: Partial<CourseSeriesListQuery>) =>
+    [...teachingResourceKeys.all, 'course-series', institutionId, query] as const,
   classes: (institutionId: string, query: Partial<ClassGroupListQuery>) =>
     [...teachingResourceKeys.all, 'classes', institutionId, query] as const,
   classStudents: (institutionId: string, classGroupId: string) =>
@@ -48,6 +53,17 @@ export function useCourses(institutionId: string | null, query: Partial<CourseLi
   return useQuery({
     queryKey: teachingResourceKeys.courses(institutionId ?? '', query),
     queryFn: () => teachingResourcesApi.listCourses(institutionId!, query),
+    enabled: Boolean(institutionId),
+  });
+}
+
+export function useCourseSeries(
+  institutionId: string | null,
+  query: Partial<CourseSeriesListQuery> = {},
+) {
+  return useQuery({
+    queryKey: teachingResourceKeys.courseSeries(institutionId ?? '', query),
+    queryFn: () => teachingResourcesApi.listCourseSeries(institutionId!, query),
     enabled: Boolean(institutionId),
   });
 }
@@ -136,6 +152,52 @@ export function useUpdateCourse() {
       id: string;
       input: UpdateCourseRequest;
     }) => teachingResourcesApi.updateCourse(institutionId, id, input),
+    onSuccess: () => refresh(client),
+  });
+}
+
+export function useCreateCourseSeries() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      institutionId,
+      input,
+    }: {
+      institutionId: string;
+      input: CreateCourseSeriesRequest;
+    }) => teachingResourcesApi.createCourseSeries(institutionId, input),
+    onSuccess: () => refresh(client),
+  });
+}
+
+export function useUpdateCourseSeries() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      institutionId,
+      id,
+      input,
+    }: {
+      institutionId: string;
+      id: string;
+      input: UpdateCourseSeriesRequest;
+    }) => teachingResourcesApi.updateCourseSeries(institutionId, id, input),
+    onSuccess: () => refresh(client),
+  });
+}
+
+export function useDeleteCourseSeries() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      institutionId,
+      id,
+      expectedRevision,
+    }: {
+      institutionId: string;
+      id: string;
+      expectedRevision: number;
+    }) => teachingResourcesApi.deleteCourseSeries(institutionId, id, { expectedRevision }),
     onSuccess: () => refresh(client),
   });
 }

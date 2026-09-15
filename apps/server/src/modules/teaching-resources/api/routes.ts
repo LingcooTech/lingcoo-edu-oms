@@ -4,11 +4,14 @@ import {
   classGroupListQuerySchema,
   classMembershipListQuerySchema,
   classroomListQuerySchema,
+  courseSeriesListQuerySchema,
   courseListQuerySchema,
   createCampusRequestSchema,
   createClassGroupRequestSchema,
   createClassroomRequestSchema,
+  createCourseSeriesRequestSchema,
   createCourseRequestSchema,
+  deleteCourseSeriesRequestSchema,
   createScheduleRequestSchema,
   generateScheduleRequestSchema,
   replaceClassMembershipsRequestSchema,
@@ -17,6 +20,7 @@ import {
   updateCampusRequestSchema,
   updateClassGroupRequestSchema,
   updateClassroomRequestSchema,
+  updateCourseSeriesRequestSchema,
   updateCourseRequestSchema,
   updateScheduleRequestSchema,
   updateSessionResourceContextRequestSchema,
@@ -31,6 +35,7 @@ const campusParams = z.object({ campusId: z.uuid() });
 const classroomParams = campusParams.extend({ classroomId: z.uuid() });
 const institutionParams = z.object({ institutionId: z.uuid() });
 const courseParams = institutionParams.extend({ courseId: z.uuid() });
+const courseSeriesParams = institutionParams.extend({ courseSeriesId: z.uuid() });
 const classParams = institutionParams.extend({ classGroupId: z.uuid() });
 const scheduleParams = institutionParams.extend({ scheduleId: z.uuid() });
 const sessionParams = institutionParams.extend({ sessionId: z.uuid() });
@@ -113,6 +118,69 @@ export async function registerTeachingResourcesRoutes(
         parse(updateClassroomRequestSchema, request.body),
         actor(request),
       );
+    },
+  );
+
+  app.get(
+    '/api/institutions/:institutionId/course-series',
+    { config: { access: educationAccess('education.courses.read') } },
+    async (request) => {
+      const params = parse(institutionParams, request.params);
+      return service.listCourseSeries(
+        params.institutionId,
+        parse(courseSeriesListQuerySchema, request.query),
+      );
+    },
+  );
+  app.get(
+    '/api/institutions/:institutionId/course-series/:courseSeriesId',
+    { config: { access: educationAccess('education.courses.read') } },
+    async (request) => {
+      const params = parse(courseSeriesParams, request.params);
+      return service.getCourseSeries(params.institutionId, params.courseSeriesId);
+    },
+  );
+  app.post(
+    '/api/institutions/:institutionId/course-series',
+    { config: { access: educationAccess('education.courses.manage') } },
+    async (request, reply) => {
+      const params = parse(institutionParams, request.params);
+      return reply
+        .code(201)
+        .send(
+          await service.createCourseSeries(
+            params.institutionId,
+            parse(createCourseSeriesRequestSchema, request.body),
+            actor(request),
+          ),
+        );
+    },
+  );
+  app.patch(
+    '/api/institutions/:institutionId/course-series/:courseSeriesId',
+    { config: { access: educationAccess('education.courses.manage') } },
+    async (request) => {
+      const params = parse(courseSeriesParams, request.params);
+      return service.updateCourseSeries(
+        params.institutionId,
+        params.courseSeriesId,
+        parse(updateCourseSeriesRequestSchema, request.body),
+        actor(request),
+      );
+    },
+  );
+  app.delete(
+    '/api/institutions/:institutionId/course-series/:courseSeriesId',
+    { config: { access: educationAccess('education.courses.manage') } },
+    async (request) => {
+      const params = parse(courseSeriesParams, request.params);
+      await service.deleteCourseSeries(
+        params.institutionId,
+        params.courseSeriesId,
+        parse(deleteCourseSeriesRequestSchema, request.body).expectedRevision,
+        actor(request),
+      );
+      return { accepted: true } as const;
     },
   );
 

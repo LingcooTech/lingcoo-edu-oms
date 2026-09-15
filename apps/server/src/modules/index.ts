@@ -256,6 +256,7 @@ export async function registerApplicationModules(
     idempotency,
     audit,
     settings: settings.service,
+    notifications: notifications.service,
   });
   lessonCommerceRef.current = lessonCommerce;
   const lessonSessions = createLessonSessionsService({
@@ -393,6 +394,7 @@ export async function registerApplicationModules(
       idempotency,
       audit,
       settings: settings.service,
+      notifications: notifications.service,
       service: lessonCommerce,
     }),
   );

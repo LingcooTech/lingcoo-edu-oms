@@ -1,20 +1,10 @@
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gte,
-  ilike,
-  inArray,
-  lte,
-  or,
-  type SQL,
-} from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or, type SQL } from 'drizzle-orm';
 import type {
   CampusListQuery,
   ClassGroupListQuery,
   ClassroomListQuery,
+  CourseSeriesListQuery,
+  CreateCourseSeriesRequest,
   CourseListQuery,
   CreateCampusRequest,
   CreateClassGroupRequest,
@@ -26,6 +16,7 @@ import type {
   UpdateCampusRequest,
   UpdateClassGroupRequest,
   UpdateClassroomRequest,
+  UpdateCourseSeriesRequest,
   UpdateCourseRequest,
   UpdateScheduleRequest,
 } from '@lingcoo-edu-oms/contracts';
@@ -40,6 +31,7 @@ import {
   teachingResourceClassGroups,
   teachingResourceClassMemberships,
   teachingResourceClassrooms,
+  teachingResourceCourseSeries,
   teachingResourceCourses,
   teachingResourceScheduleOccurrences,
   teachingResourceSchedules,
@@ -50,6 +42,7 @@ import {
 export type CampusRecord = typeof teachingResourceCampuses.$inferSelect;
 export type ClassroomRecord = typeof teachingResourceClassrooms.$inferSelect;
 export type CourseRecord = typeof teachingResourceCourses.$inferSelect;
+export type CourseSeriesRecord = typeof teachingResourceCourseSeries.$inferSelect;
 export type ClassGroupRecord = typeof teachingResourceClassGroups.$inferSelect;
 export type ClassMembershipRecord = typeof teachingResourceClassMemberships.$inferSelect;
 export type ScheduleRecord = typeof teachingResourceSchedules.$inferSelect;
@@ -204,6 +197,113 @@ export class TeachingResourcesRepository {
       this.database.db.select({ value: count() }).from(teachingResourceCourses).where(where),
     ]);
     return { items, total: totals[0]?.value ?? 0 };
+  }
+
+  async listCourseSeries(institutionId: string, input: CourseSeriesListQuery) {
+    const filters: SQL[] = [eq(teachingResourceCourseSeries.institutionId, institutionId)];
+    if (input.search) {
+      filters.push(
+        or(
+          ilike(teachingResourceCourseSeries.name, `%${input.search}%`),
+          ilike(teachingResourceCourseSeries.code, `%${input.search}%`),
+          ilike(teachingResourceCourseSeries.slug, `%${input.search}%`),
+        )!,
+      );
+    }
+    if (input.status) filters.push(eq(teachingResourceCourseSeries.status, input.status));
+    const where = and(...filters);
+    const [items, totals] = await Promise.all([
+      this.database.db
+        .select()
+        .from(teachingResourceCourseSeries)
+        .where(where)
+        .orderBy(
+          asc(teachingResourceCourseSeries.sortOrder),
+          asc(teachingResourceCourseSeries.name),
+        )
+        .limit(input.pageSize)
+        .offset((input.page - 1) * input.pageSize),
+      this.database.db.select({ value: count() }).from(teachingResourceCourseSeries).where(where),
+    ]);
+    return { items, total: totals[0]?.value ?? 0 };
+  }
+
+  async findCourseSeries(id: string, executor: DatabaseExecutor = this.database.db) {
+    const [row] = await executor
+      .select()
+      .from(teachingResourceCourseSeries)
+      .where(eq(teachingResourceCourseSeries.id, id))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async createCourseSeries(
+    institutionId: string,
+    input: CreateCourseSeriesRequest,
+    executor: DatabaseTransaction,
+  ) {
+    const [row] = await executor
+      .insert(teachingResourceCourseSeries)
+      .values({ ...input, institutionId })
+      .returning();
+    return row!;
+  }
+
+  async updateCourseSeries(
+    institutionId: string,
+    id: string,
+    input: UpdateCourseSeriesRequest,
+    executor: DatabaseTransaction,
+  ) {
+    const { expectedRevision, ...changes } = input;
+    const [row] = await executor
+      .update(teachingResourceCourseSeries)
+      .set({ ...changes, revision: expectedRevision + 1, updatedAt: new Date() })
+      .where(
+        and(
+          eq(teachingResourceCourseSeries.id, id),
+          eq(teachingResourceCourseSeries.institutionId, institutionId),
+          eq(teachingResourceCourseSeries.revision, expectedRevision),
+        ),
+      )
+      .returning();
+    return row ?? null;
+  }
+
+  async countCoursesForSeries(
+    institutionId: string,
+    courseSeriesId: string,
+    executor: DatabaseExecutor = this.database.db,
+  ) {
+    const [result] = await executor
+      .select({ value: count() })
+      .from(teachingResourceCourses)
+      .where(
+        and(
+          eq(teachingResourceCourses.institutionId, institutionId),
+          eq(teachingResourceCourses.courseSeriesId, courseSeriesId),
+        ),
+      );
+    return result?.value ?? 0;
+  }
+
+  async deleteCourseSeries(
+    institutionId: string,
+    id: string,
+    expectedRevision: number,
+    executor: DatabaseTransaction,
+  ) {
+    const [row] = await executor
+      .delete(teachingResourceCourseSeries)
+      .where(
+        and(
+          eq(teachingResourceCourseSeries.id, id),
+          eq(teachingResourceCourseSeries.institutionId, institutionId),
+          eq(teachingResourceCourseSeries.revision, expectedRevision),
+        ),
+      )
+      .returning({ id: teachingResourceCourseSeries.id });
+    return row ?? null;
   }
 
   async findCourse(id: string, executor: DatabaseExecutor = this.database.db) {

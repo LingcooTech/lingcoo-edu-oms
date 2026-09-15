@@ -6,9 +6,10 @@ import type {
   DatabaseHandle,
   DatabaseTransaction,
 } from '../../../../database/database.js';
-import { lessonCommerceOrders } from './lesson-commerce.schema.js';
+import { lessonCommerceOrders, lessonCommerceRefundRequests } from './lesson-commerce.schema.js';
 
 export type LessonCommerceOrderRecord = typeof lessonCommerceOrders.$inferSelect;
+export type LessonCommerceRefundRecord = typeof lessonCommerceRefundRequests.$inferSelect;
 
 export class LessonCommerceRepository {
   constructor(private readonly database: DatabaseHandle) {}
@@ -371,6 +372,338 @@ export class LessonCommerceRepository {
       .where(and(eq(lessonCommerceOrders.id, id), eq(lessonCommerceOrders.status, 'refunding')))
       .returning();
     return record ?? null;
+  }
+
+  async createRefundRequest(
+    input: typeof lessonCommerceRefundRequests.$inferInsert,
+    executor: DatabaseTransaction,
+  ): Promise<LessonCommerceRefundRecord> {
+    const [record] = await executor.insert(lessonCommerceRefundRequests).values(input).returning();
+    return record!;
+  }
+
+  async findRefundRequestById(
+    id: string,
+    executor: DatabaseExecutor = this.database.db,
+  ): Promise<LessonCommerceRefundRecord | null> {
+    const [record] = await executor
+      .select()
+      .from(lessonCommerceRefundRequests)
+      .where(eq(lessonCommerceRefundRequests.id, id))
+      .limit(1);
+    return record ?? null;
+  }
+
+  async findRefundRequestByKey(
+    orderId: string,
+    requestKey: string,
+    executor: DatabaseExecutor = this.database.db,
+  ): Promise<LessonCommerceRefundRecord | null> {
+    const [record] = await executor
+      .select()
+      .from(lessonCommerceRefundRequests)
+      .where(
+        and(
+          eq(lessonCommerceRefundRequests.orderId, orderId),
+          eq(lessonCommerceRefundRequests.requestKey, requestKey),
+        ),
+      )
+      .limit(1);
+    return record ?? null;
+  }
+
+  async findActiveRefundRequestForOrder(
+    orderId: string,
+    executor: DatabaseExecutor = this.database.db,
+  ): Promise<LessonCommerceRefundRecord | null> {
+    const [record] = await executor
+      .select()
+      .from(lessonCommerceRefundRequests)
+      .where(
+        and(
+          eq(lessonCommerceRefundRequests.orderId, orderId),
+          sql`${lessonCommerceRefundRequests.status} in ('requested','approved','processing','awaiting_offline_refund','failed')`,
+        ),
+      )
+      .orderBy(desc(lessonCommerceRefundRequests.createdAt))
+      .limit(1);
+    return record ?? null;
+  }
+
+  listRefundRequestsForOrder(
+    orderId: string,
+    executor: DatabaseExecutor = this.database.db,
+  ): Promise<LessonCommerceRefundRecord[]> {
+    return executor
+      .select()
+      .from(lessonCommerceRefundRequests)
+      .where(eq(lessonCommerceRefundRequests.orderId, orderId))
+      .orderBy(desc(lessonCommerceRefundRequests.createdAt), desc(lessonCommerceRefundRequests.id));
+  }
+
+  async lockRefundRequest(id: string, executor: DatabaseTransaction) {
+    const [record] = await executor
+      .select()
+      .from(lessonCommerceRefundRequests)
+      .where(eq(lessonCommerceRefundRequests.id, id))
+      .for('update')
+      .limit(1);
+    return record ?? null;
+  }
+
+  async approveRefundRequest(
+    id: string,
+    expectedRevision: number,
+    reviewerId: string,
+    reviewNote: string | null,
+    executor: DatabaseTransaction,
+  ) {
+    const now = new Date();
+    const [record] = await executor
+      .update(lessonCommerceRefundRequests)
+      .set({
+        status: 'approved',
+        reviewedByUserId: reviewerId,
+        reviewNote,
+        approvedAt: now,
+        failureStage: null,
+        failureCode: null,
+        failureMessage: null,
+        revision: expectedRevision + 1,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(lessonCommerceRefundRequests.id, id),
+          eq(lessonCommerceRefundRequests.status, 'requested'),
+          eq(lessonCommerceRefundRequests.revision, expectedRevision),
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async rejectRefundRequest(
+    id: string,
+    expectedRevision: number,
+    reviewerId: string,
+    reviewNote: string,
+    executor: DatabaseTransaction,
+  ) {
+    const now = new Date();
+    const [record] = await executor
+      .update(lessonCommerceRefundRequests)
+      .set({
+        status: 'rejected',
+        reviewedByUserId: reviewerId,
+        reviewNote,
+        rejectedAt: now,
+        revision: expectedRevision + 1,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(lessonCommerceRefundRequests.id, id),
+          eq(lessonCommerceRefundRequests.status, 'requested'),
+          eq(lessonCommerceRefundRequests.revision, expectedRevision),
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async cancelRefundRequest(
+    id: string,
+    expectedRevision: number,
+    note: string,
+    executor: DatabaseTransaction,
+  ) {
+    const now = new Date();
+    const [record] = await executor
+      .update(lessonCommerceRefundRequests)
+      .set({
+        status: 'cancelled',
+        reviewNote: note,
+        cancelledAt: now,
+        failureStage: null,
+        failureCode: null,
+        failureMessage: null,
+        revision: expectedRevision + 1,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(lessonCommerceRefundRequests.id, id),
+          sql`${lessonCommerceRefundRequests.status} in ('requested','failed')`,
+          eq(lessonCommerceRefundRequests.revision, expectedRevision),
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async markRefundProcessing(id: string, expectedRevision: number, executor: DatabaseTransaction) {
+    const [record] = await executor
+      .update(lessonCommerceRefundRequests)
+      .set({
+        status: 'processing',
+        failureStage: null,
+        failureCode: null,
+        failureMessage: null,
+        revision: expectedRevision + 1,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(lessonCommerceRefundRequests.id, id),
+          sql`${lessonCommerceRefundRequests.status} in ('approved','failed')`,
+          eq(lessonCommerceRefundRequests.revision, expectedRevision),
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async markEntitlementRecovered(id: string, executor: DatabaseTransaction) {
+    const [record] = await executor
+      .update(lessonCommerceRefundRequests)
+      .set({
+        entitlementRecoveredAt: new Date(),
+        revision: sql`${lessonCommerceRefundRequests.revision} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(lessonCommerceRefundRequests.id, id),
+          eq(lessonCommerceRefundRequests.status, 'processing'),
+          sql`${lessonCommerceRefundRequests.entitlementRecoveredAt} is null`,
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async markAwaitingOfflineRefund(id: string, executor: DatabaseTransaction) {
+    const [record] = await executor
+      .update(lessonCommerceRefundRequests)
+      .set({
+        status: 'awaiting_offline_refund',
+        revision: sql`${lessonCommerceRefundRequests.revision} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(lessonCommerceRefundRequests.id, id),
+          eq(lessonCommerceRefundRequests.status, 'processing'),
+          sql`${lessonCommerceRefundRequests.entitlementRecoveredAt} is not null`,
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async markFundsRefunded(
+    id: string,
+    input: {
+      paymentRefundId?: string | null;
+      offlineRefundMethod?: 'cash' | 'bank_transfer' | 'wechat_transfer' | 'other' | null;
+      offlineRefundReference?: string | null;
+      offlineRefundNote?: string | null;
+      refundedAt: Date;
+    },
+    executor: DatabaseTransaction,
+  ) {
+    const [record] = await executor
+      .update(lessonCommerceRefundRequests)
+      .set({
+        paymentRefundId: input.paymentRefundId ?? null,
+        offlineRefundMethod: input.offlineRefundMethod ?? null,
+        offlineRefundReference: input.offlineRefundReference ?? null,
+        offlineRefundNote: input.offlineRefundNote ?? null,
+        fundsRefundedAt: input.refundedAt,
+        revision: sql`${lessonCommerceRefundRequests.revision} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(lessonCommerceRefundRequests.id, id),
+          sql`${lessonCommerceRefundRequests.status} in ('processing','awaiting_offline_refund')`,
+          sql`${lessonCommerceRefundRequests.fundsRefundedAt} is null`,
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async markRefundRequestCompleted(id: string, executor: DatabaseTransaction) {
+    const now = new Date();
+    const [record] = await executor
+      .update(lessonCommerceRefundRequests)
+      .set({
+        status: 'completed',
+        completedAt: now,
+        failureStage: null,
+        failureCode: null,
+        failureMessage: null,
+        revision: sql`${lessonCommerceRefundRequests.revision} + 1`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(lessonCommerceRefundRequests.id, id),
+          sql`${lessonCommerceRefundRequests.status} in ('processing','awaiting_offline_refund')`,
+          sql`${lessonCommerceRefundRequests.entitlementRecoveredAt} is not null`,
+          sql`${lessonCommerceRefundRequests.fundsRefundedAt} is not null`,
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async markRefundRequestFailed(
+    id: string,
+    stage: 'entitlement_recovery' | 'funds_refund' | 'finalization',
+    code: string,
+    message: string,
+    executor: DatabaseTransaction,
+  ) {
+    const [record] = await executor
+      .update(lessonCommerceRefundRequests)
+      .set({
+        status: 'failed',
+        failureStage: stage,
+        failureCode: code.slice(0, 120),
+        failureMessage: message.slice(0, 500),
+        revision: sql`${lessonCommerceRefundRequests.revision} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(lessonCommerceRefundRequests.id, id),
+          sql`${lessonCommerceRefundRequests.status} in ('approved','processing')`,
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  isRefundRequestConflict(error: unknown): boolean {
+    let current = error;
+    for (let depth = 0; depth < 3; depth += 1) {
+      if (!current || typeof current !== 'object') return false;
+      const candidate = current as { code?: string; constraint?: string; cause?: unknown };
+      if (
+        candidate.code === '23505' &&
+        [
+          'lesson_commerce_refunds_order_request_key_unique',
+          'lesson_commerce_refunds_order_active_unique',
+        ].includes(candidate.constraint ?? '')
+      ) {
+        return true;
+      }
+      current = candidate.cause;
+    }
+    return false;
   }
 
   listForGuardian(guardianId: string, input: LessonOrderListQuery) {

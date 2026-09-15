@@ -47,6 +47,23 @@ export const offlineLessonOrderPaymentMethodSchema = lessonOrderPaymentMethodSch
 
 export const lessonOrderProductTypeSchema = z.enum(['lesson_package', 'period_card']);
 
+export const lessonOrderRefundStatusSchema = z.enum([
+  'requested',
+  'approved',
+  'processing',
+  'awaiting_offline_refund',
+  'completed',
+  'rejected',
+  'cancelled',
+  'failed',
+]);
+
+export const lessonOrderRefundFailureStageSchema = z.enum([
+  'entitlement_recovery',
+  'funds_refund',
+  'finalization',
+]);
+
 const lessonOrderCommonSchema = z.object({
   id: idSchema,
   orderNo: z.string().trim().min(1).max(64),
@@ -271,6 +288,71 @@ export const refundLessonOrderRequestSchema = z.object({
   reason: z.string().trim().min(2).max(500),
 });
 
+export const createLessonOrderRefundRequestSchema = z.object({
+  expectedOrderRevision: z.number().int().positive(),
+  requestKey: z.string().trim().min(8).max(120),
+  reason: z.string().trim().min(2).max(500),
+});
+
+export const reviewLessonOrderRefundRequestSchema = z.object({
+  expectedRevision: z.number().int().positive(),
+  note: z.string().trim().min(2).max(500).nullable().optional().default(null),
+});
+
+export const cancelLessonOrderRefundRequestSchema = z.object({
+  expectedRevision: z.number().int().positive(),
+  reason: z.string().trim().min(2).max(500),
+});
+
+export const confirmOfflineLessonOrderRefundRequestSchema = z.object({
+  expectedRevision: z.number().int().positive(),
+  refundedAt: isoDateTimeSchema.optional(),
+  paymentMethod: offlineLessonOrderPaymentMethodSchema,
+  paymentReference: z.string().trim().min(1).max(160).nullable().optional().default(null),
+  note: z.string().trim().min(2).max(500).nullable().optional().default(null),
+});
+
+export const lessonOrderRefundSchema = z.object({
+  id: idSchema,
+  requestNo: z.string().trim().min(1).max(64),
+  requestKey: z.string().trim().min(8).max(120),
+  orderId: idSchema,
+  orderNo: z.string().trim().min(1).max(64),
+  institutionId: idSchema,
+  studentId: idSchema,
+  studentName: z.string().trim().min(1).max(120),
+  guardianId: idSchema,
+  guardianName: z.string().trim().min(1).max(120),
+  productType: lessonOrderProductTypeSchema,
+  channel: lessonOrderChannelSchema.extract(['online', 'offline']),
+  amountMinor: z.number().int().positive(),
+  currency: z.literal('CNY'),
+  reason: z.string().trim().min(2).max(500),
+  status: lessonOrderRefundStatusSchema,
+  requestedByUserId: idSchema,
+  reviewedByUserId: idSchema.nullable(),
+  reviewNote: z.string().trim().min(1).max(500).nullable(),
+  offlineRefundMethod: offlineLessonOrderPaymentMethodSchema.nullable(),
+  offlineRefundReference: z.string().trim().min(1).max(160).nullable(),
+  offlineRefundNote: z.string().trim().min(1).max(500).nullable(),
+  paymentRefundId: z.string().trim().min(1).max(120).nullable(),
+  failureStage: lessonOrderRefundFailureStageSchema.nullable(),
+  failureCode: z.string().trim().min(1).max(120).nullable(),
+  failureMessage: z.string().trim().min(1).max(500).nullable(),
+  requestedAt: isoDateTimeSchema,
+  approvedAt: isoDateTimeSchema.nullable(),
+  rejectedAt: isoDateTimeSchema.nullable(),
+  cancelledAt: isoDateTimeSchema.nullable(),
+  entitlementRecoveredAt: isoDateTimeSchema.nullable(),
+  fundsRefundedAt: isoDateTimeSchema.nullable(),
+  completedAt: isoDateTimeSchema.nullable(),
+  revision: z.number().int().positive(),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+});
+
+export const lessonOrderRefundListSchema = z.array(lessonOrderRefundSchema);
+
 export const lessonReceiptSchema = z.object({
   receiptNo: z.string().trim().min(1).max(80),
   title: z.literal('收据'),
@@ -314,3 +396,12 @@ export type LessonOrderCheckout = z.infer<typeof lessonOrderCheckoutSchema>;
 export type LessonReceipt = z.infer<typeof lessonReceiptSchema>;
 export type RetryLessonOrderGrantRequest = z.input<typeof retryLessonOrderGrantRequestSchema>;
 export type RefundLessonOrderRequest = z.infer<typeof refundLessonOrderRequestSchema>;
+export type LessonOrderRefundStatus = z.infer<typeof lessonOrderRefundStatusSchema>;
+export type LessonOrderRefundFailureStage = z.infer<typeof lessonOrderRefundFailureStageSchema>;
+export type LessonOrderRefund = z.infer<typeof lessonOrderRefundSchema>;
+export type CreateLessonOrderRefundRequest = z.infer<typeof createLessonOrderRefundRequestSchema>;
+export type ReviewLessonOrderRefundRequest = z.input<typeof reviewLessonOrderRefundRequestSchema>;
+export type CancelLessonOrderRefundRequest = z.infer<typeof cancelLessonOrderRefundRequestSchema>;
+export type ConfirmOfflineLessonOrderRefundRequest = z.input<
+  typeof confirmOfflineLessonOrderRefundRequestSchema
+>;

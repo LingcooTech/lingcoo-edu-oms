@@ -13,10 +13,16 @@ import type {
   LessonOrder,
   PublishGroupMatchingCampaignRequest,
   RecordGroupMatchingDepositRequest,
+  RecordGroupMatchingDepositRefundRequest,
   UpdateGroupMatchingCampaignRequest,
+  WithdrawGroupMatchingEnrollmentRequest,
 } from '@lingcoo-edu-oms/contracts';
 
-import type { DatabaseExecutor, DatabaseHandle } from '../../../database/database.js';
+import type {
+  DatabaseExecutor,
+  DatabaseHandle,
+  DatabaseTransaction,
+} from '../../../database/database.js';
 import type { AuditContext, AuditWriter } from '../../audit/public.js';
 import type { GroupFormationOrderIssuer } from '../../lesson-commerce/public.js';
 import type { LessonPackageIssuer } from '../../lesson-products/public.js';
@@ -28,6 +34,7 @@ import type {
 import {
   GroupMatchingRepository,
   type GroupMatchingCampaignRecord,
+  type GroupMatchingDepositRefundRecord,
   type GroupMatchingEnrollmentRecord,
   type GroupMatchingFormationMemberRecord,
   type GroupMatchingFormationRecord,
@@ -61,13 +68,19 @@ export class GroupMatchingService {
 
   async get(institutionId: string, campaignId: string): Promise<GroupMatchingCampaignDetail> {
     const campaign = await this.requireCampaign(institutionId, campaignId);
-    const [enrollments, formation] = await Promise.all([
+    const [enrollments, refunds, formation] = await Promise.all([
       this.repository.listEnrollments(campaign.id),
+      this.repository.listDepositRefunds(campaign.id),
       this.repository.findFormationByCampaign(campaign.id),
     ]);
+    const refundsByEnrollment = new Map(refunds.map((item) => [item.enrollmentId, item]));
     return {
       campaign: await this.campaignView(campaign, enrollments),
-      enrollments: { items: enrollments.map((item) => this.enrollmentView(item)) },
+      enrollments: {
+        items: enrollments.map((item) =>
+          this.enrollmentView(item, refundsByEnrollment.get(item.id) ?? null),
+        ),
+      },
       formation: formation ? await this.formationView(formation) : null,
     };
   }
@@ -416,6 +429,235 @@ export class GroupMatchingService {
     });
   }
 
+  async recordDepositRefund(
+    institutionId: string,
+    campaignId: string,
+    enrollmentId: string,
+    input: RecordGroupMatchingDepositRefundRequest,
+    idempotencyKey: string,
+    context: ActorContext,
+  ): Promise<GroupMatchingEnrollment> {
+    return this.database.transaction(async (transaction) => {
+      const campaign = await this.repository.lockCampaign(campaignId, transaction);
+      this.assertInstitution(campaign, institutionId);
+      const enrollment = await this.repository.lockEnrollment(enrollmentId, transaction);
+      if (!enrollment || enrollment.campaignId !== campaignId) {
+        throw new ApiError(404, 'GROUP_MATCHING_ENROLLMENT_NOT_FOUND', '拼课报名不存在');
+      }
+
+      const replay = await this.repository.findDepositRefundByIdempotencyKey(
+        institutionId,
+        idempotencyKey,
+        transaction,
+      );
+      if (replay) {
+        this.assertRefundReplay(replay, enrollmentId, input);
+        return this.enrollmentView(enrollment, replay);
+      }
+      const existingRefund = await this.repository.findDepositRefundByEnrollment(
+        enrollmentId,
+        transaction,
+      );
+      if (existingRefund) {
+        throw new ApiError(
+          409,
+          'GROUP_MATCHING_DEPOSIT_ALREADY_REFUNDED',
+          '该报名的意向金已经登记退款，请刷新后继续退出',
+        );
+      }
+      if (campaign!.status === 'formed' || enrollment.status === 'selected') {
+        throw new ApiError(
+          409,
+          'GROUP_MATCHING_FORMAL_ORDER_REFUND_REQUIRED',
+          '该报名已成班并生成正式订单，请走后续订单退款流程',
+        );
+      }
+      if (!['recruiting', 'ready'].includes(campaign!.status)) {
+        throw new ApiError(
+          409,
+          'GROUP_MATCHING_DEPOSIT_REFUND_NOT_ALLOWED',
+          '当前不能登记意向金退款',
+        );
+      }
+      if (enrollment.status !== 'deposit_paid') {
+        throw new ApiError(
+          409,
+          'GROUP_MATCHING_DEPOSIT_NOT_PAID',
+          '只有已实际收取意向金的报名可以登记退款',
+        );
+      }
+      if (enrollment.depositAmountMinor <= 0) {
+        throw new ApiError(
+          409,
+          'GROUP_MATCHING_DEPOSIT_REFUND_NOT_REQUIRED',
+          '该报名未收取意向金，可以直接退出',
+        );
+      }
+      if (enrollment.revision !== input.expectedRevision) {
+        throw new ApiError(409, 'GROUP_MATCHING_VERSION_CONFLICT', '报名已变化，请刷新后重试');
+      }
+      if (input.refundedAmountMinor !== enrollment.depositAmountMinor) {
+        throw new ApiError(
+          400,
+          'GROUP_MATCHING_DEPOSIT_REFUND_AMOUNT_INVALID',
+          '退款金额必须等于该报名已收意向金',
+        );
+      }
+
+      const refund = await this.repository.createDepositRefund(
+        {
+          institutionId,
+          campaignId,
+          enrollmentId,
+          amountMinor: input.refundedAmountMinor,
+          refundMethod: input.refundMethod,
+          refundReference: input.refundReference,
+          refundNote: input.refundNote,
+          refundedAt: input.refundedAt ? new Date(input.refundedAt) : this.clock(),
+          recordedByUserId: context.actorId,
+          idempotencyKey,
+          enrollmentRevisionBefore: enrollment.revision,
+        },
+        transaction,
+      );
+      const updated = await this.repository.markDepositRefunded(
+        enrollmentId,
+        enrollment.revision,
+        transaction,
+      );
+      if (!updated) {
+        throw new ApiError(409, 'GROUP_MATCHING_DEPOSIT_REFUND_CONFLICT', '意向金退款登记失败');
+      }
+      await this.rebalanceReadyCampaign(campaign!, transaction);
+      await this.audit.record(
+        {
+          ...context,
+          category: 'business',
+          action: 'group-matching.deposit-refund-recorded',
+          resourceType: 'group-matching.deposit-refund',
+          resourceId: refund.id,
+          changes: [
+            { field: 'status', before: enrollment.status, after: updated.status },
+            { field: 'refundedAmountMinor', before: null, after: refund.amountMinor },
+          ],
+          metadata: {
+            campaignId,
+            enrollmentId,
+            studentId: enrollment.studentId,
+            refundMethod: refund.refundMethod,
+            idempotencyKey,
+          },
+        },
+        transaction,
+      );
+      return this.enrollmentView(updated, refund);
+    });
+  }
+
+  async withdrawEnrollment(
+    institutionId: string,
+    campaignId: string,
+    enrollmentId: string,
+    input: WithdrawGroupMatchingEnrollmentRequest,
+    idempotencyKey: string,
+    context: ActorContext,
+  ): Promise<GroupMatchingEnrollment> {
+    return this.database.transaction(async (transaction) => {
+      const campaign = await this.repository.lockCampaign(campaignId, transaction);
+      this.assertInstitution(campaign, institutionId);
+      const enrollment = await this.repository.lockEnrollment(enrollmentId, transaction);
+      if (!enrollment || enrollment.campaignId !== campaignId) {
+        throw new ApiError(404, 'GROUP_MATCHING_ENROLLMENT_NOT_FOUND', '拼课报名不存在');
+      }
+      const replay = await this.repository.findEnrollmentByWithdrawalIdempotencyKey(
+        institutionId,
+        idempotencyKey,
+        transaction,
+      );
+      if (replay) {
+        if (replay.id !== enrollmentId || replay.withdrawalReason !== input.reason) {
+          throw new ApiError(
+            409,
+            'GROUP_MATCHING_IDEMPOTENCY_CONFLICT',
+            '该幂等键已用于另一笔退出操作',
+          );
+        }
+        const refund = await this.repository.findDepositRefundByEnrollment(
+          enrollmentId,
+          transaction,
+        );
+        return this.enrollmentView(replay, refund);
+      }
+      if (enrollment.status === 'withdrawn') {
+        const refund = await this.repository.findDepositRefundByEnrollment(
+          enrollmentId,
+          transaction,
+        );
+        return this.enrollmentView(enrollment, refund);
+      }
+      if (campaign!.status === 'formed' || enrollment.status === 'selected') {
+        throw new ApiError(
+          409,
+          'GROUP_MATCHING_FORMAL_ORDER_REFUND_REQUIRED',
+          '该报名已成班并生成正式订单，请走后续订单退款流程',
+        );
+      }
+      if (!['recruiting', 'ready'].includes(campaign!.status)) {
+        throw new ApiError(409, 'GROUP_MATCHING_WITHDRAWAL_NOT_ALLOWED', '当前不能退出报名');
+      }
+      if (enrollment.status === 'deposit_paid' && enrollment.depositAmountMinor > 0) {
+        throw new ApiError(
+          409,
+          'GROUP_MATCHING_DEPOSIT_REFUND_REQUIRED',
+          '已收取意向金，请先确认实际线下退款，再办理退出',
+        );
+      }
+      if (enrollment.status === 'deposit_refunded') {
+        const refund = await this.repository.findDepositRefundByEnrollment(
+          enrollmentId,
+          transaction,
+        );
+        if (!refund) {
+          throw new ApiError(
+            409,
+            'GROUP_MATCHING_REFUND_FACT_MISSING',
+            '退款事实缺失，不能办理退出',
+          );
+        }
+      }
+      if (enrollment.revision !== input.expectedRevision) {
+        throw new ApiError(409, 'GROUP_MATCHING_VERSION_CONFLICT', '报名已变化，请刷新后重试');
+      }
+      const updated = await this.repository.withdrawEnrollment(
+        enrollmentId,
+        enrollment.revision,
+        {
+          reason: input.reason,
+          withdrawnAt: this.clock(),
+          withdrawnByUserId: context.actorId,
+          idempotencyKey,
+        },
+        transaction,
+      );
+      if (!updated) throw new ApiError(409, 'GROUP_MATCHING_WITHDRAWAL_CONFLICT', '报名退出失败');
+      await this.rebalanceReadyCampaign(campaign!, transaction);
+      await this.audit.record(
+        {
+          ...context,
+          category: 'business',
+          action: 'group-matching.enrollment-withdrawn',
+          resourceType: 'group-matching.enrollment',
+          resourceId: enrollmentId,
+          changes: [{ field: 'status', before: enrollment.status, after: updated.status }],
+          metadata: { campaignId, studentId: enrollment.studentId, reason: input.reason },
+        },
+        transaction,
+      );
+      const refund = await this.repository.findDepositRefundByEnrollment(enrollmentId, transaction);
+      return this.enrollmentView(updated, refund);
+    });
+  }
+
   async confirmFormation(
     institutionId: string,
     campaignId: string,
@@ -647,19 +889,43 @@ export class GroupMatchingService {
       if (campaign!.revision !== input.expectedRevision) {
         throw new ApiError(409, 'GROUP_MATCHING_VERSION_CONFLICT', '拼课已变化，请刷新后重试');
       }
-      if ((await this.repository.countPaidEnrollments(campaignId, transaction)) > 0) {
+      const enrollments = await this.repository.listEnrollments(campaignId, transaction);
+      const refunds = await this.repository.listDepositRefunds(campaignId, transaction);
+      const refundedEnrollmentIds = new Set(refunds.map((item) => item.enrollmentId));
+      const unrefunded = enrollments.filter(
+        (item) =>
+          item.status === 'deposit_paid' &&
+          item.depositAmountMinor > 0 &&
+          !refundedEnrollmentIds.has(item.id),
+      );
+      if (unrefunded.length > 0) {
         throw new ApiError(
           409,
           'GROUP_MATCHING_DEPOSIT_REFUND_REQUIRED',
-          '存在已收意向金，请先完成退款流程',
+          `还有 ${unrefunded.length} 笔已收意向金未退款，请先完成线下退款登记`,
         );
       }
+      const invalidRefundState = enrollments.find(
+        (item) => item.status === 'deposit_refunded' && !refundedEnrollmentIds.has(item.id),
+      );
+      if (invalidRefundState) {
+        throw new ApiError(409, 'GROUP_MATCHING_REFUND_FACT_MISSING', '存在缺少退款事实的报名');
+      }
+      const withdrawn = await this.repository.withdrawCancellableEnrollments(
+        campaignId,
+        {
+          reason: `拼课取消：${input.reason}`,
+          withdrawnAt: this.clock(),
+          withdrawnByUserId: context.actorId,
+        },
+        transaction,
+      );
       const updated = await this.repository.transitionCampaign(
         campaignId,
         ['draft', 'recruiting', 'ready'],
         'cancelled',
         transaction,
-        { cancelledAt: this.clock(), notes: input.reason },
+        { cancelledAt: this.clock(), cancellationReason: input.reason },
       );
       if (!updated) throw new ApiError(409, 'GROUP_MATCHING_CANCEL_CONFLICT', '取消拼课失败');
       await this.recordTransition(
@@ -668,7 +934,7 @@ export class GroupMatchingService {
         'group-matching.campaign-cancelled',
         context,
         transaction,
-        { reason: input.reason },
+        { reason: input.reason, autoWithdrawnEnrollmentIds: withdrawn.map((item) => item.id) },
       );
       return this.campaignView(updated);
     });
@@ -702,13 +968,33 @@ export class GroupMatchingService {
     };
   }
 
-  private enrollmentView(record: GroupMatchingEnrollmentRecord): GroupMatchingEnrollment {
+  private enrollmentView(
+    record: GroupMatchingEnrollmentRecord,
+    refund: GroupMatchingDepositRefundRecord | null = null,
+  ): GroupMatchingEnrollment {
     return {
       ...record,
+      depositRefund: refund ? this.depositRefundView(refund) : null,
       depositPaidAt: record.depositPaidAt?.toISOString() ?? null,
       withdrawnAt: record.withdrawnAt?.toISOString() ?? null,
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
+    };
+  }
+
+  private depositRefundView(record: GroupMatchingDepositRefundRecord) {
+    return {
+      id: record.id,
+      amountMinor: record.amountMinor,
+      currency: record.currency,
+      refundMethod: record.refundMethod,
+      refundReference: record.refundReference,
+      refundNote: record.refundNote,
+      refundedAt: record.refundedAt.toISOString(),
+      recordedByUserId: record.recordedByUserId,
+      idempotencyKey: record.idempotencyKey,
+      enrollmentRevisionBefore: record.enrollmentRevisionBefore,
+      createdAt: record.createdAt.toISOString(),
     };
   }
 
@@ -851,6 +1137,37 @@ export class GroupMatchingService {
       },
       transaction,
     );
+  }
+
+  private async rebalanceReadyCampaign(
+    campaign: GroupMatchingCampaignRecord,
+    transaction: DatabaseTransaction,
+  ) {
+    if (campaign.status !== 'ready') return;
+    const paidCount = await this.repository.countPaidEnrollments(campaign.id, transaction);
+    if (paidCount < campaign.minParticipants) {
+      await this.repository.transitionCampaign(campaign.id, ['ready'], 'recruiting', transaction);
+    }
+  }
+
+  private assertRefundReplay(
+    refund: GroupMatchingDepositRefundRecord,
+    enrollmentId: string,
+    input: RecordGroupMatchingDepositRefundRequest,
+  ) {
+    if (
+      refund.enrollmentId !== enrollmentId ||
+      refund.amountMinor !== input.refundedAmountMinor ||
+      refund.refundMethod !== input.refundMethod ||
+      refund.refundReference !== input.refundReference ||
+      refund.refundNote !== input.refundNote
+    ) {
+      throw new ApiError(
+        409,
+        'GROUP_MATCHING_IDEMPOTENCY_CONFLICT',
+        '该幂等键已用于另一笔退款操作',
+      );
+    }
   }
 
   private translateConflict(error: unknown) {

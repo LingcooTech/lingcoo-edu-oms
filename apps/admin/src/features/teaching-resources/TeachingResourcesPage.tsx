@@ -51,6 +51,7 @@ import {
   useClassStudents,
   useClassrooms,
   useCourses,
+  useCourseSeries,
   useCreateCampus,
   useCreateClass,
   useCreateClassroom,
@@ -74,6 +75,7 @@ type ResourceFormValues = {
   category?: string | null;
   ageRange?: string | null;
   summary?: string | null;
+  courseSeriesId?: string | null;
   durationMinutes?: number;
   sortOrder?: number;
   capacity?: number;
@@ -131,6 +133,7 @@ export function TeachingResourcesPage({ initialTab = 'courses' }: { initialTab?:
     search: search || undefined,
     status: tab === 'courses' ? (status as Course['status'] | undefined) : undefined,
   });
+  const courseSeries = useCourseSeries(institutionId, { page: 1, pageSize: 100 });
   const classes = useClasses(institutionId, {
     page: 1,
     pageSize: 100,
@@ -185,6 +188,10 @@ export function TeachingResourcesPage({ initialTab = 'courses' }: { initialTab?:
     value: item.id,
     label: item.name,
   }));
+  const courseSeriesOptions = (courseSeries.data?.items ?? []).map((item) => ({
+    value: item.id,
+    label: `${item.name}${item.status === 'inactive' ? '（已停用）' : ''}`,
+  }));
   const campusOptions = (campuses.data?.items ?? []).map((item) => ({
     value: item.id,
     label: item.name,
@@ -203,6 +210,7 @@ export function TeachingResourcesPage({ initialTab = 'courses' }: { initialTab?:
           category: nullable(values.category),
           ageRange: nullable(values.ageRange),
           summary: nullable(values.summary),
+          courseSeriesId: values.courseSeriesId ?? null,
           durationMinutes: values.durationMinutes ?? 60,
           sortOrder: values.sortOrder ?? 0,
         };
@@ -415,7 +423,13 @@ export function TeachingResourcesPage({ initialTab = 'courses' }: { initialTab?:
                   { title: '编码', dataIndex: 'code', render: (v) => v || '—' },
                   { title: '时长', dataIndex: 'durationMinutes', render: (v) => `${v} 分钟` },
                   { title: '状态', dataIndex: 'status', render: (v) => <Tag>{v}</Tag> },
-                  { title: '关系', render: () => '可选，不影响课时权益' },
+                  {
+                    title: '课程系列',
+                    render: (_, item) =>
+                      (courseSeries.data?.items ?? []).find(
+                        (series) => series.id === item.courseSeriesId,
+                      )?.name ?? '未分类',
+                  },
                   {
                     title: '操作',
                     render: (_, item) => (
@@ -574,6 +588,7 @@ export function TeachingResourcesPage({ initialTab = 'courses' }: { initialTab?:
             updateClassroom.isPending
           }
           courseOptions={courseOptions}
+          courseSeriesOptions={courseSeriesOptions}
           campusOptions={campusOptions}
           classroomOptions={classroomOptions}
           onSubmit={(values) => submit(editing.kind, values)}
@@ -615,6 +630,7 @@ function ResourceModal({
   open,
   loading,
   courseOptions,
+  courseSeriesOptions,
   campusOptions,
   classroomOptions,
   onClose,
@@ -625,6 +641,7 @@ function ResourceModal({
   open: boolean;
   loading: boolean;
   courseOptions: SelectOption[];
+  courseSeriesOptions: SelectOption[];
   campusOptions: SelectOption[];
   classroomOptions: SelectOption[];
   onClose(): void;
@@ -662,6 +679,9 @@ function ResourceModal({
           <>
             <Form.Item name="code" label="编码">
               <Input />
+            </Form.Item>
+            <Form.Item name="courseSeriesId" label="课程系列（可选）">
+              <Select allowClear options={courseSeriesOptions} />
             </Form.Item>
             <Row gutter={16}>
               <Col span={12}>

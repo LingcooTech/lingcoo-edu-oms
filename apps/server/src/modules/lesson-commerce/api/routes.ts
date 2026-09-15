@@ -1,6 +1,10 @@
 import { ApiError } from '@lingcoo-tech/http';
 import {
   createLessonOrderRequestSchema,
+  createLessonOrderRefundRequestSchema,
+  reviewLessonOrderRefundRequestSchema,
+  cancelLessonOrderRefundRequestSchema,
+  confirmOfflineLessonOrderRefundRequestSchema,
   createOfflineLessonOrderRequestSchema,
   createMiniStudentRequestSchema,
   idempotencyKeySchema,
@@ -19,6 +23,8 @@ import type { LessonCommerceService } from '../application/lesson-commerce.servi
 
 const orderParamsSchema = z.object({ orderId: z.uuid() });
 const institutionParamsSchema = z.object({ institutionId: z.uuid() });
+const institutionOrderParamsSchema = institutionParamsSchema.extend({ orderId: z.uuid() });
+const institutionRefundParamsSchema = institutionParamsSchema.extend({ refundId: z.uuid() });
 const packageQuerySchema = z.object({ institutionId: z.uuid() });
 
 export async function registerLessonCommerceRoutes(
@@ -193,6 +199,97 @@ export async function registerLessonCommerceRoutes(
     },
   );
   app.post(
+    '/api/institutions/:institutionId/orders/:orderId/refunds',
+    {
+      config: {
+        access: {
+          permissions: ['education.orders.manage'],
+          education: { institutionParam: 'institutionId', permission: 'education.orders.manage' },
+        },
+      },
+    },
+    async (request, reply) => {
+      const params = parse(institutionOrderParamsSchema, request.params);
+      return reply
+        .code(201)
+        .send(
+          await service.requestRefund(
+            params.institutionId,
+            params.orderId,
+            parse(createLessonOrderRefundRequestSchema, request.body),
+            actorWithId(request),
+          ),
+        );
+    },
+  );
+  app.get(
+    '/api/institutions/:institutionId/orders/:orderId/refunds',
+    {
+      config: {
+        access: {
+          permissions: ['education.orders.read'],
+          education: { institutionParam: 'institutionId', permission: 'education.orders.read' },
+        },
+      },
+    },
+    async (request) => {
+      const params = parse(institutionOrderParamsSchema, request.params);
+      return service.listRefundRequests(params.institutionId, params.orderId);
+    },
+  );
+  app.post(
+    '/api/institutions/:institutionId/refunds/:refundId/actions/approve',
+    { config: { access: refundManagementAccess() } },
+    async (request) => {
+      const params = parse(institutionRefundParamsSchema, request.params);
+      return service.approveRefundRequest(
+        params.institutionId,
+        params.refundId,
+        parse(reviewLessonOrderRefundRequestSchema, request.body),
+        actorWithId(request),
+      );
+    },
+  );
+  app.post(
+    '/api/institutions/:institutionId/refunds/:refundId/actions/reject',
+    { config: { access: refundManagementAccess() } },
+    async (request) => {
+      const params = parse(institutionRefundParamsSchema, request.params);
+      return service.rejectRefundRequest(
+        params.institutionId,
+        params.refundId,
+        parse(reviewLessonOrderRefundRequestSchema, request.body),
+        actorWithId(request),
+      );
+    },
+  );
+  app.post(
+    '/api/institutions/:institutionId/refunds/:refundId/actions/cancel',
+    { config: { access: refundManagementAccess() } },
+    async (request) => {
+      const params = parse(institutionRefundParamsSchema, request.params);
+      return service.cancelRefundRequest(
+        params.institutionId,
+        params.refundId,
+        parse(cancelLessonOrderRefundRequestSchema, request.body),
+        actorWithId(request),
+      );
+    },
+  );
+  app.post(
+    '/api/institutions/:institutionId/refunds/:refundId/actions/confirm-offline',
+    { config: { access: refundManagementAccess() } },
+    async (request) => {
+      const params = parse(institutionRefundParamsSchema, request.params);
+      return service.confirmOfflineRefund(
+        params.institutionId,
+        params.refundId,
+        parse(confirmOfflineLessonOrderRefundRequestSchema, request.body),
+        actorWithId(request),
+      );
+    },
+  );
+  app.post(
     '/api/institutions/:institutionId/orders/:orderId/actions/refund',
     {
       config: {
@@ -216,6 +313,17 @@ export async function registerLessonCommerceRoutes(
       );
     },
   );
+}
+
+function refundManagementAccess() {
+  return {
+    permissions: [
+      'education.orders.manage',
+      'education.lesson-balances.manage',
+      'education.lesson-packages.manage',
+    ],
+    education: { institutionParam: 'institutionId', permission: 'education.orders.manage' },
+  } as const;
 }
 
 function parse<T>(schema: z.ZodType<T>, input: unknown): T {

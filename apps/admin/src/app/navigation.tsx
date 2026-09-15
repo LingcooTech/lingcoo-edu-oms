@@ -100,6 +100,14 @@ export const foundationNavigation: AdminNavigationItem[] = [
     section: 'resources',
   },
   {
+    key: 'course-series',
+    label: '课程系列',
+    path: '/course-series',
+    icon: <BookOutlined />,
+    permission: 'education.courses.read',
+    section: 'resources',
+  },
+  {
     key: 'courses',
     label: '课程管理',
     path: '/courses',

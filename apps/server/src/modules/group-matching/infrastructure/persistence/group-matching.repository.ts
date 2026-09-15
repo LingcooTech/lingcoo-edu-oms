@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 
 import type {
   DatabaseExecutor,
@@ -7,6 +7,7 @@ import type {
 } from '../../../../database/database.js';
 import {
   groupMatchingCampaigns,
+  groupMatchingDepositRefunds,
   groupMatchingEnrollments,
   groupMatchingFormationMembers,
   groupMatchingFormations,
@@ -15,6 +16,7 @@ import {
 
 export type GroupMatchingCampaignRecord = typeof groupMatchingCampaigns.$inferSelect;
 export type GroupMatchingEnrollmentRecord = typeof groupMatchingEnrollments.$inferSelect;
+export type GroupMatchingDepositRefundRecord = typeof groupMatchingDepositRefunds.$inferSelect;
 export type GroupMatchingFormationRecord = typeof groupMatchingFormations.$inferSelect;
 export type GroupMatchingFormationMemberRecord = typeof groupMatchingFormationMembers.$inferSelect;
 export type GroupMatchingPriceTierRecord = typeof groupMatchingPriceTiers.$inferSelect;
@@ -145,6 +147,44 @@ export class GroupMatchingRepository {
       .orderBy(asc(groupMatchingEnrollments.createdAt), asc(groupMatchingEnrollments.id));
   }
 
+  listDepositRefunds(campaignId: string, executor: DatabaseExecutor = this.database.db) {
+    return executor
+      .select()
+      .from(groupMatchingDepositRefunds)
+      .where(eq(groupMatchingDepositRefunds.campaignId, campaignId))
+      .orderBy(asc(groupMatchingDepositRefunds.createdAt));
+  }
+
+  async findDepositRefundByEnrollment(
+    enrollmentId: string,
+    executor: DatabaseExecutor = this.database.db,
+  ) {
+    const [record] = await executor
+      .select()
+      .from(groupMatchingDepositRefunds)
+      .where(eq(groupMatchingDepositRefunds.enrollmentId, enrollmentId))
+      .limit(1);
+    return record ?? null;
+  }
+
+  async findDepositRefundByIdempotencyKey(
+    institutionId: string,
+    idempotencyKey: string,
+    executor: DatabaseExecutor = this.database.db,
+  ) {
+    const [record] = await executor
+      .select()
+      .from(groupMatchingDepositRefunds)
+      .where(
+        and(
+          eq(groupMatchingDepositRefunds.institutionId, institutionId),
+          eq(groupMatchingDepositRefunds.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .limit(1);
+    return record ?? null;
+  }
+
   async countPaidEnrollments(campaignId: string, executor: DatabaseExecutor = this.database.db) {
     const [result] = await executor
       .select({ value: count() })
@@ -172,6 +212,24 @@ export class GroupMatchingRepository {
       .from(groupMatchingEnrollments)
       .where(eq(groupMatchingEnrollments.id, id))
       .for('update')
+      .limit(1);
+    return record ?? null;
+  }
+
+  async findEnrollmentByWithdrawalIdempotencyKey(
+    institutionId: string,
+    idempotencyKey: string,
+    executor: DatabaseExecutor = this.database.db,
+  ) {
+    const [record] = await executor
+      .select()
+      .from(groupMatchingEnrollments)
+      .where(
+        and(
+          eq(groupMatchingEnrollments.institutionId, institutionId),
+          eq(groupMatchingEnrollments.withdrawalIdempotencyKey, idempotencyKey),
+        ),
+      )
       .limit(1);
     return record ?? null;
   }
@@ -207,6 +265,111 @@ export class GroupMatchingRepository {
       )
       .returning();
     return record ?? null;
+  }
+
+  async createDepositRefund(
+    input: typeof groupMatchingDepositRefunds.$inferInsert,
+    executor: DatabaseTransaction,
+  ) {
+    const [record] = await executor.insert(groupMatchingDepositRefunds).values(input).returning();
+    return record!;
+  }
+
+  async markDepositRefunded(id: string, expectedRevision: number, executor: DatabaseTransaction) {
+    const [record] = await executor
+      .update(groupMatchingEnrollments)
+      .set({
+        status: 'deposit_refunded',
+        revision: expectedRevision + 1,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(groupMatchingEnrollments.id, id),
+          eq(groupMatchingEnrollments.revision, expectedRevision),
+          eq(groupMatchingEnrollments.status, 'deposit_paid'),
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async withdrawEnrollment(
+    id: string,
+    expectedRevision: number,
+    input: {
+      reason: string;
+      withdrawnAt: Date;
+      withdrawnByUserId: string;
+      idempotencyKey: string;
+    },
+    executor: DatabaseTransaction,
+  ) {
+    const [record] = await executor
+      .update(groupMatchingEnrollments)
+      .set({
+        status: 'withdrawn',
+        withdrawnAt: input.withdrawnAt,
+        withdrawalReason: input.reason,
+        withdrawnByUserId: input.withdrawnByUserId,
+        withdrawalIdempotencyKey: input.idempotencyKey,
+        revision: expectedRevision + 1,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(groupMatchingEnrollments.id, id),
+          eq(groupMatchingEnrollments.revision, expectedRevision),
+          or(
+            inArray(groupMatchingEnrollments.status, [
+              'pending_deposit',
+              'deposit_refunded',
+              'waitlisted',
+            ]),
+            and(
+              eq(groupMatchingEnrollments.status, 'deposit_paid'),
+              eq(groupMatchingEnrollments.depositAmountMinor, 0),
+            ),
+          ),
+        ),
+      )
+      .returning();
+    return record ?? null;
+  }
+
+  async withdrawCancellableEnrollments(
+    campaignId: string,
+    input: { reason: string; withdrawnAt: Date; withdrawnByUserId: string },
+    executor: DatabaseTransaction,
+  ) {
+    return executor
+      .update(groupMatchingEnrollments)
+      .set({
+        status: 'withdrawn',
+        withdrawnAt: input.withdrawnAt,
+        withdrawalReason: input.reason,
+        withdrawnByUserId: input.withdrawnByUserId,
+        withdrawalIdempotencyKey: sql`'campaign-cancel:' || ${campaignId} || ':' || ${groupMatchingEnrollments.id}::text`,
+        revision: sql`${groupMatchingEnrollments.revision} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(groupMatchingEnrollments.campaignId, campaignId),
+          or(
+            inArray(groupMatchingEnrollments.status, [
+              'pending_deposit',
+              'deposit_refunded',
+              'waitlisted',
+            ]),
+            and(
+              eq(groupMatchingEnrollments.status, 'deposit_paid'),
+              eq(groupMatchingEnrollments.depositAmountMinor, 0),
+            ),
+          ),
+        ),
+      )
+      .returning();
   }
 
   async findFormationByCampaign(campaignId: string, executor: DatabaseExecutor = this.database.db) {

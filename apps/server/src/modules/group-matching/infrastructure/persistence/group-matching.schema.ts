@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   check,
+  foreignKey,
   index,
   integer,
   pgTable,
@@ -67,6 +68,7 @@ export const groupMatchingCampaigns = pgTable(
     publishedAt: timestamp('published_at', { withTimezone: true }),
     formedAt: timestamp('formed_at', { withTimezone: true }),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancellationReason: varchar('cancellation_reason', { length: 500 }),
     revision: integer('revision').notNull().default(1),
     ...timestamps,
   },
@@ -75,6 +77,7 @@ export const groupMatchingCampaigns = pgTable(
       table.institutionId,
       table.title,
     ),
+    uniqueIndex('group_matching_campaigns_id_institution_unique').on(table.id, table.institutionId),
     index('group_matching_campaigns_institution_status_idx').on(
       table.institutionId,
       table.status,
@@ -93,6 +96,10 @@ export const groupMatchingCampaigns = pgTable(
       sql`${table.status} in ('draft','recruiting','ready','formed','cancelled')`,
     ),
     check('group_matching_campaigns_revision_check', sql`${table.revision} > 0`),
+    check(
+      'group_matching_campaigns_cancellation_shape_check',
+      sql`(${table.status} = 'cancelled' and ${table.cancelledAt} is not null and ${table.cancellationReason} is not null) or (${table.status} <> 'cancelled' and ${table.cancelledAt} is null and ${table.cancellationReason} is null)`,
+    ),
   ],
 );
 
@@ -145,7 +152,14 @@ export const groupMatchingEnrollments = pgTable(
       .references(() => guardiansForeignKeyTarget.id, { onDelete: 'restrict' }),
     guardianNameSnapshot: varchar('guardian_name_snapshot', { length: 160 }).notNull(),
     status: varchar('status', { length: 24 })
-      .$type<'pending_deposit' | 'deposit_paid' | 'selected' | 'waitlisted' | 'withdrawn'>()
+      .$type<
+        | 'pending_deposit'
+        | 'deposit_paid'
+        | 'deposit_refunded'
+        | 'selected'
+        | 'waitlisted'
+        | 'withdrawn'
+      >()
       .notNull()
       .default('pending_deposit'),
     schedulePreference: varchar('schedule_preference', { length: 1_000 }),
@@ -163,6 +177,12 @@ export const groupMatchingEnrollments = pgTable(
       { onDelete: 'restrict' },
     ),
     withdrawnAt: timestamp('withdrawn_at', { withTimezone: true }),
+    withdrawalReason: varchar('withdrawal_reason', { length: 500 }),
+    withdrawnByUserId: uuid('withdrawn_by_user_id').references(
+      () => identityUsersForeignKeyTarget.id,
+      { onDelete: 'restrict' },
+    ),
+    withdrawalIdempotencyKey: varchar('withdrawal_idempotency_key', { length: 200 }),
     revision: integer('revision').notNull().default(1),
     ...timestamps,
   },
@@ -171,20 +191,95 @@ export const groupMatchingEnrollments = pgTable(
       table.campaignId,
       table.studentId,
     ),
+    uniqueIndex('group_matching_enrollments_id_institution_campaign_unique').on(
+      table.id,
+      table.institutionId,
+      table.campaignId,
+    ),
     index('group_matching_enrollments_campaign_status_idx').on(
       table.campaignId,
       table.status,
       table.createdAt,
     ),
+    uniqueIndex('group_matching_enrollments_withdrawal_idempotency_unique').on(
+      table.institutionId,
+      table.withdrawalIdempotencyKey,
+    ),
     check(
       'group_matching_enrollments_status_check',
-      sql`${table.status} in ('pending_deposit','deposit_paid','selected','waitlisted','withdrawn')`,
+      sql`${table.status} in ('pending_deposit','deposit_paid','deposit_refunded','selected','waitlisted','withdrawn')`,
     ),
     check('group_matching_enrollments_deposit_check', sql`${table.depositAmountMinor} >= 0`),
     check('group_matching_enrollments_revision_check', sql`${table.revision} > 0`),
     check(
       'group_matching_enrollments_paid_shape_check',
-      sql`(${table.status} in ('deposit_paid','selected') and ${table.depositPaidAt} is not null and ${table.depositPaymentMethod} is not null and ${table.depositRecordedByUserId} is not null) or (${table.status} in ('pending_deposit','waitlisted') and ${table.depositPaidAt} is null and ${table.depositPaymentMethod} is null and ${table.depositRecordedByUserId} is null) or ${table.status} = 'withdrawn'`,
+      sql`(${table.status} in ('deposit_paid','deposit_refunded','selected') and ${table.depositPaidAt} is not null and ${table.depositPaymentMethod} is not null and ${table.depositRecordedByUserId} is not null) or (${table.status} in ('pending_deposit','waitlisted') and ${table.depositPaidAt} is null and ${table.depositPaymentMethod} is null and ${table.depositRecordedByUserId} is null) or ${table.status} = 'withdrawn'`,
+    ),
+    check(
+      'group_matching_enrollments_withdrawal_shape_check',
+      sql`(${table.status} = 'withdrawn' and ${table.withdrawnAt} is not null and ${table.withdrawalReason} is not null and ${table.withdrawnByUserId} is not null and ${table.withdrawalIdempotencyKey} is not null) or (${table.status} <> 'withdrawn' and ${table.withdrawnAt} is null and ${table.withdrawalReason} is null and ${table.withdrawnByUserId} is null and ${table.withdrawalIdempotencyKey} is null)`,
+    ),
+  ],
+);
+
+export const groupMatchingDepositRefunds = pgTable(
+  'group_matching_deposit_refunds',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    institutionId: uuid('institution_id')
+      .notNull()
+      .references(() => institutionsForeignKeyTarget.id, { onDelete: 'restrict' }),
+    campaignId: uuid('campaign_id')
+      .notNull()
+      .references(() => groupMatchingCampaigns.id, { onDelete: 'restrict' }),
+    enrollmentId: uuid('enrollment_id')
+      .notNull()
+      .references(() => groupMatchingEnrollments.id, { onDelete: 'restrict' }),
+    amountMinor: integer('amount_minor').notNull(),
+    currency: varchar('currency', { length: 3 }).$type<'CNY'>().notNull().default('CNY'),
+    refundMethod: varchar('refund_method', { length: 32 })
+      .$type<'cash' | 'bank_transfer' | 'wechat_transfer' | 'other'>()
+      .notNull(),
+    refundReference: varchar('refund_reference', { length: 160 }),
+    refundNote: varchar('refund_note', { length: 500 }),
+    refundedAt: timestamp('refunded_at', { withTimezone: true }).notNull(),
+    recordedByUserId: uuid('recorded_by_user_id')
+      .notNull()
+      .references(() => identityUsersForeignKeyTarget.id, { onDelete: 'restrict' }),
+    idempotencyKey: varchar('idempotency_key', { length: 200 }).notNull(),
+    enrollmentRevisionBefore: integer('enrollment_revision_before').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('group_matching_deposit_refunds_enrollment_unique').on(table.enrollmentId),
+    uniqueIndex('group_matching_deposit_refunds_idempotency_unique').on(
+      table.institutionId,
+      table.idempotencyKey,
+    ),
+    index('group_matching_deposit_refunds_campaign_idx').on(table.campaignId, table.createdAt),
+    foreignKey({
+      name: 'group_matching_deposit_refunds_campaign_institution_fk',
+      columns: [table.campaignId, table.institutionId],
+      foreignColumns: [groupMatchingCampaigns.id, groupMatchingCampaigns.institutionId],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'group_matching_deposit_refunds_enrollment_campaign_institution_fk',
+      columns: [table.enrollmentId, table.institutionId, table.campaignId],
+      foreignColumns: [
+        groupMatchingEnrollments.id,
+        groupMatchingEnrollments.institutionId,
+        groupMatchingEnrollments.campaignId,
+      ],
+    }).onDelete('restrict'),
+    check('group_matching_deposit_refunds_amount_check', sql`${table.amountMinor} > 0`),
+    check('group_matching_deposit_refunds_currency_check', sql`${table.currency} = 'CNY'`),
+    check(
+      'group_matching_deposit_refunds_method_check',
+      sql`${table.refundMethod} in ('cash','bank_transfer','wechat_transfer','other')`,
+    ),
+    check(
+      'group_matching_deposit_refunds_revision_check',
+      sql`${table.enrollmentRevisionBefore} > 0`,
     ),
   ],
 );

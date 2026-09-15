@@ -54,6 +54,96 @@ function order() {
 }
 
 describe('lesson commerce API client', () => {
+  it('drives the refund request, approval and offline confirmation endpoints', async () => {
+    const baseRefund = {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      requestNo: 'RF202609141000001234',
+      requestKey: 'refund-request-001',
+      orderId: order().id,
+      orderNo: order().orderNo,
+      institutionId: order().institutionId,
+      studentId: order().studentId,
+      studentName: order().studentName,
+      guardianId: order().guardianId,
+      guardianName: order().guardianName,
+      productType: 'lesson_package',
+      channel: 'offline',
+      amountMinor: 12_800,
+      currency: 'CNY',
+      reason: '家长取消课程',
+      status: 'requested',
+      requestedByUserId: order().guardianId,
+      reviewedByUserId: null,
+      reviewNote: null,
+      offlineRefundMethod: null,
+      offlineRefundReference: null,
+      offlineRefundNote: null,
+      paymentRefundId: null,
+      failureStage: null,
+      failureCode: null,
+      failureMessage: null,
+      requestedAt: '2026-09-14T02:00:00.000Z',
+      approvedAt: null,
+      rejectedAt: null,
+      cancelledAt: null,
+      entitlementRecoveredAt: null,
+      fundsRefundedAt: null,
+      completedAt: null,
+      revision: 1,
+      createdAt: '2026-09-14T02:00:00.000Z',
+      updatedAt: '2026-09-14T02:00:00.000Z',
+    };
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(Response.json(baseRefund))
+      .mockResolvedValueOnce(
+        Response.json({
+          ...baseRefund,
+          status: 'awaiting_offline_refund',
+          reviewedByUserId: order().guardianId,
+          approvedAt: baseRefund.requestedAt,
+          entitlementRecoveredAt: baseRefund.requestedAt,
+          revision: 4,
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          ...baseRefund,
+          status: 'completed',
+          reviewedByUserId: order().guardianId,
+          approvedAt: baseRefund.requestedAt,
+          entitlementRecoveredAt: baseRefund.requestedAt,
+          fundsRefundedAt: baseRefund.requestedAt,
+          completedAt: baseRefund.requestedAt,
+          offlineRefundMethod: 'wechat_transfer',
+          offlineRefundNote: '已退回',
+          revision: 6,
+        }),
+      );
+    const api = createLessonCommerceApi(
+      createApiClient({ fetch, getCsrfToken: () => 'csrf-token' }),
+    );
+
+    await api.requestRefund(order().institutionId, order().id, {
+      expectedOrderRevision: 4,
+      requestKey: baseRefund.requestKey,
+      reason: baseRefund.reason,
+    });
+    await api.approveRefund(order().institutionId, baseRefund.id, {
+      expectedRevision: 1,
+      note: '同意全额退款',
+    });
+    await api.confirmOfflineRefund(order().institutionId, baseRefund.id, {
+      expectedRevision: 4,
+      paymentMethod: 'wechat_transfer',
+      note: '已退回',
+    });
+
+    expect(fetch.mock.calls[0]?.[0]).toContain(`/orders/${order().id}/refunds`);
+    expect(fetch.mock.calls[1]?.[0]).toContain(`/refunds/${baseRefund.id}/actions/approve`);
+    expect(fetch.mock.calls[2]?.[0]).toContain(`/refunds/${baseRefund.id}/actions/confirm-offline`);
+  });
+
   it('normalizes the legacy online payload and accepts a period card product', () => {
     const institutionId = '22222222-2222-4222-8222-222222222222';
     const studentId = '33333333-3333-4333-8333-333333333333';

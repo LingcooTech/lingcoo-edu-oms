@@ -9,6 +9,7 @@ import { lessonUnitsSchema } from './lesson-packages.js';
 export const campusStatusSchema = z.enum(['active', 'inactive']);
 export const classroomStatusSchema = z.enum(['active', 'inactive']);
 export const courseStatusSchema = z.enum(['draft', 'active', 'inactive']);
+export const courseSeriesStatusSchema = z.enum(['active', 'inactive']);
 export const classGroupStatusSchema = z.enum(['recruiting', 'active', 'completed', 'archived']);
 export const classMembershipStatusSchema = z.enum(['active', 'inactive']);
 export const scheduleStatusSchema = z.enum(['active', 'inactive']);
@@ -141,9 +142,66 @@ export const updateClassroomRequestSchema = z
   .strict()
   .refine(hasUpdateFields, { message: '至少提供一个待更新字段' });
 
+export const courseSeriesSchema = z.object({
+  id: idSchema,
+  institutionId: idSchema,
+  name: requiredText(160),
+  code: nullableText(80).optional(),
+  slug: nullableText(120).optional(),
+  description: nullableText(2_000).optional(),
+  status: courseSeriesStatusSchema,
+  sortOrder: z.number().int().nonnegative(),
+  revision: revisionSchema,
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+});
+
+export const courseSeriesListQuerySchema = pageQuerySchema.extend({
+  search: z.string().trim().min(1).max(160).optional(),
+  status: courseSeriesStatusSchema.optional(),
+});
+export const courseSeriesPageSchema = pagedResponseSchema(courseSeriesSchema);
+
+export const createCourseSeriesRequestSchema = z
+  .object({
+    name: requiredText(160),
+    code: nullableText(80).optional().default(null),
+    slug: nullableText(120).optional().default(null),
+    description: nullableText(2_000).optional().default(null),
+    status: courseSeriesStatusSchema.optional().default('active'),
+    sortOrder: z.number().int().nonnegative().optional().default(0),
+  })
+  .strict()
+  .refine((value) => Boolean(value.code || value.slug), {
+    message: '编码和 slug 至少填写一个',
+    path: ['code'],
+  });
+
+export const updateCourseSeriesRequestSchema = z
+  .object({
+    expectedRevision: revisionSchema,
+    name: requiredText(160).optional(),
+    code: nullableText(80).optional(),
+    slug: nullableText(120).optional(),
+    description: nullableText(2_000).optional(),
+    status: courseSeriesStatusSchema.optional(),
+    sortOrder: z.number().int().nonnegative().optional(),
+  })
+  .strict()
+  .refine(hasUpdateFields, { message: '至少提供一个待更新字段' })
+  .refine((value) => value.code !== null || value.slug !== null, {
+    message: '编码和 slug 不能同时清空',
+    path: ['code'],
+  });
+
+export const deleteCourseSeriesRequestSchema = z.object({
+  expectedRevision: revisionSchema,
+});
+
 export const courseSchema = z.object({
   id: idSchema,
   institutionId: idSchema,
+  courseSeriesId: optionalId,
   code: nullableText(80).optional(),
   name: requiredText(160),
   category: nullableText(80).optional(),
@@ -166,6 +224,7 @@ export const coursePageSchema = pagedResponseSchema(courseSchema);
 
 export const createCourseRequestSchema = z
   .object({
+    courseSeriesId: optionalId,
     code: nullableText(80).optional().default(null),
     name: requiredText(160),
     category: nullableText(80).optional().default(null),
@@ -180,6 +239,7 @@ export const createCourseRequestSchema = z
 export const updateCourseRequestSchema = z
   .object({
     expectedRevision: revisionSchema,
+    courseSeriesId: optionalId,
     code: nullableText(80).optional(),
     name: requiredText(160).optional(),
     category: nullableText(80).optional(),
@@ -457,6 +517,12 @@ export type ClassroomListQuery = z.output<typeof classroomListQuerySchema>;
 export type CreateClassroomRequest = z.input<typeof createClassroomRequestSchema>;
 export type UpdateClassroomRequest = z.infer<typeof updateClassroomRequestSchema>;
 export type CourseStatus = z.infer<typeof courseStatusSchema>;
+export type CourseSeriesStatus = z.infer<typeof courseSeriesStatusSchema>;
+export type CourseSeries = z.infer<typeof courseSeriesSchema>;
+export type CourseSeriesListQuery = z.output<typeof courseSeriesListQuerySchema>;
+export type CreateCourseSeriesRequest = z.input<typeof createCourseSeriesRequestSchema>;
+export type UpdateCourseSeriesRequest = z.infer<typeof updateCourseSeriesRequestSchema>;
+export type DeleteCourseSeriesRequest = z.infer<typeof deleteCourseSeriesRequestSchema>;
 export type Course = z.infer<typeof courseSchema>;
 export type CourseListQuery = z.output<typeof courseListQuerySchema>;
 export type CreateCourseRequest = z.input<typeof createCourseRequestSchema>;

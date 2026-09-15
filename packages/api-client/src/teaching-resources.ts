@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import {
   campusListQuerySchema,
   campusPageSchema,
@@ -14,10 +16,15 @@ import {
   courseListQuerySchema,
   coursePageSchema,
   courseSchema,
+  courseSeriesListQuerySchema,
+  courseSeriesPageSchema,
+  courseSeriesSchema,
   createCampusRequestSchema,
+  createCourseSeriesRequestSchema,
   createClassGroupRequestSchema,
   createClassroomRequestSchema,
   createCourseRequestSchema,
+  deleteCourseSeriesRequestSchema,
   createScheduleRequestSchema,
   generateScheduleRequestSchema,
   generateScheduleResponseSchema,
@@ -32,6 +39,7 @@ import {
   updateClassGroupRequestSchema,
   updateClassroomRequestSchema,
   updateCourseRequestSchema,
+  updateCourseSeriesRequestSchema,
   updateScheduleRequestSchema,
   updateSessionResourceContextRequestSchema,
   idSchema,
@@ -39,6 +47,8 @@ import {
   type ClassGroupListQuery,
   type ClassroomListQuery,
   type CourseListQuery,
+  type CourseSeriesListQuery,
+  type CreateCourseSeriesRequest,
   type CreateCampusRequest,
   type CreateClassGroupRequest,
   type CreateClassroomRequest,
@@ -53,6 +63,7 @@ import {
   type UpdateClassGroupRequest,
   type UpdateClassroomRequest,
   type UpdateCourseRequest,
+  type UpdateCourseSeriesRequest,
   type UpdateScheduleRequest,
   type UpdateSessionResourceContextRequest,
 } from '@lingcoo-edu-oms/contracts';
@@ -88,6 +99,10 @@ function classroomPath(campusId: string, classroomId: string): string {
 
 function coursePath(institutionId: string, courseId: string): string {
   return `${institutionPath(institutionId)}/courses/${pathId(courseId)}`;
+}
+
+function courseSeriesPath(institutionId: string, courseSeriesId: string): string {
+  return `${institutionPath(institutionId)}/course-series/${pathId(courseSeriesId)}`;
 }
 
 function classGroupPath(institutionId: string, classGroupId: string): string {
@@ -174,6 +189,51 @@ export function createTeachingResourcesApi(client: ApiClient) {
         path: coursePath(institutionId, courseId),
         body: updateCourseRequestSchema.parse(input),
         schema: courseSchema,
+      });
+    },
+    listCourseSeries(institutionId: string, input: Partial<CourseSeriesListQuery> = {}) {
+      const query = courseSeriesListQuerySchema.parse(input);
+      return client.request({
+        path: `${institutionPath(institutionId)}/course-series${queryString(query)}`,
+        schema: courseSeriesPageSchema,
+      });
+    },
+    getCourseSeries(institutionId: string, courseSeriesId: string) {
+      return client.request({
+        path: courseSeriesPath(institutionId, courseSeriesId),
+        schema: courseSeriesSchema,
+      });
+    },
+    createCourseSeries(institutionId: string, input: CreateCourseSeriesRequest) {
+      return client.request({
+        method: 'POST',
+        path: `${institutionPath(institutionId)}/course-series`,
+        body: createCourseSeriesRequestSchema.parse(input),
+        schema: courseSeriesSchema,
+      });
+    },
+    updateCourseSeries(
+      institutionId: string,
+      courseSeriesId: string,
+      input: UpdateCourseSeriesRequest,
+    ) {
+      return client.request({
+        method: 'PATCH',
+        path: courseSeriesPath(institutionId, courseSeriesId),
+        body: updateCourseSeriesRequestSchema.parse(input),
+        schema: courseSeriesSchema,
+      });
+    },
+    deleteCourseSeries(
+      institutionId: string,
+      courseSeriesId: string,
+      input: { expectedRevision: number },
+    ) {
+      return client.request({
+        method: 'DELETE',
+        path: courseSeriesPath(institutionId, courseSeriesId),
+        body: deleteCourseSeriesRequestSchema.parse(input),
+        schema: z.object({ accepted: z.literal(true) }),
       });
     },
     listClassGroups(institutionId: string, input: Partial<ClassGroupListQuery> = {}) {

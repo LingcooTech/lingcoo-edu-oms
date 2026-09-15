@@ -12,7 +12,9 @@ import {
   idSchema,
   publishGroupMatchingCampaignRequestSchema,
   recordGroupMatchingDepositRequestSchema,
+  recordGroupMatchingDepositRefundRequestSchema,
   updateGroupMatchingCampaignRequestSchema,
+  withdrawGroupMatchingEnrollmentRequestSchema,
   type AddGroupMatchingEnrollmentRequest,
   type CancelGroupMatchingCampaignRequest,
   type ConfirmGroupMatchingFormationRequest,
@@ -20,7 +22,9 @@ import {
   type GroupMatchingCampaignListQuery,
   type PublishGroupMatchingCampaignRequest,
   type RecordGroupMatchingDepositRequest,
+  type RecordGroupMatchingDepositRefundRequest,
   type UpdateGroupMatchingCampaignRequest,
+  type WithdrawGroupMatchingEnrollmentRequest,
 } from '@lingcoo-edu-oms/contracts';
 
 import type { ApiClient } from './client.js';
@@ -111,6 +115,36 @@ export function createGroupMatchingApi(client: ApiClient) {
         method: 'POST',
         path: `${enrollmentPath(institutionId, campaignId, enrollmentId)}/deposit`,
         body: recordGroupMatchingDepositRequestSchema.parse(input),
+        schema: groupMatchingEnrollmentSchema,
+      });
+    },
+    recordDepositRefund(
+      institutionId: string,
+      campaignId: string,
+      enrollmentId: string,
+      input: RecordGroupMatchingDepositRefundRequest,
+      idempotencyKey: string,
+    ) {
+      return client.request({
+        method: 'POST',
+        path: `${enrollmentPath(institutionId, campaignId, enrollmentId)}/actions/refund-deposit`,
+        headers: { 'idempotency-key': idempotencyKey },
+        body: recordGroupMatchingDepositRefundRequestSchema.parse(input),
+        schema: groupMatchingEnrollmentSchema,
+      });
+    },
+    withdrawEnrollment(
+      institutionId: string,
+      campaignId: string,
+      enrollmentId: string,
+      input: WithdrawGroupMatchingEnrollmentRequest,
+      idempotencyKey: string,
+    ) {
+      return client.request({
+        method: 'POST',
+        path: `${enrollmentPath(institutionId, campaignId, enrollmentId)}/actions/withdraw`,
+        headers: { 'idempotency-key': idempotencyKey },
+        body: withdrawGroupMatchingEnrollmentRequestSchema.parse(input),
         schema: groupMatchingEnrollmentSchema,
       });
     },

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { idSchema } from './common/ids.js';
 import { pageQuerySchema, pagedResponseSchema } from './common/pagination.js';
 import { isoDateTimeSchema } from './common/time.js';
+import { idempotencyKeySchema } from './idempotency.js';
 
 export const groupMatchingCampaignStatusSchema = z.enum([
   'draft',
@@ -15,6 +16,7 @@ export const groupMatchingCampaignStatusSchema = z.enum([
 export const groupMatchingEnrollmentStatusSchema = z.enum([
   'pending_deposit',
   'deposit_paid',
+  'deposit_refunded',
   'selected',
   'waitlisted',
   'withdrawn',
@@ -138,6 +140,7 @@ export const groupMatchingCampaignSchema = z.object({
   publishedAt: isoDateTimeSchema.nullable(),
   formedAt: isoDateTimeSchema.nullable(),
   cancelledAt: isoDateTimeSchema.nullable(),
+  cancellationReason: nullableText(500),
   enrollmentCount: nonnegativeIntegerSchema,
   depositPaidCount: nonnegativeIntegerSchema,
   selectedCount: nonnegativeIntegerSchema,
@@ -224,7 +227,24 @@ export const groupMatchingEnrollmentSchema = z.object({
   depositPaymentNote: nullableText(500),
   depositPaidAt: isoDateTimeSchema.nullable(),
   depositRecordedByUserId: idSchema.nullable(),
+  depositRefund: z
+    .object({
+      id: idSchema,
+      amountMinor: positiveAmountSchema,
+      currency: z.literal('CNY'),
+      refundMethod: groupMatchingDepositPaymentMethodSchema,
+      refundReference: nullableText(160),
+      refundNote: nullableText(500),
+      refundedAt: isoDateTimeSchema,
+      recordedByUserId: idSchema,
+      idempotencyKey: idempotencyKeySchema,
+      enrollmentRevisionBefore: revisionSchema,
+      createdAt: isoDateTimeSchema,
+    })
+    .nullable(),
   withdrawnAt: isoDateTimeSchema.nullable(),
+  withdrawalReason: nullableText(500),
+  withdrawnByUserId: idSchema.nullable(),
   revision: revisionSchema,
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
@@ -249,6 +269,20 @@ export const recordGroupMatchingDepositRequestSchema = z.object({
   receivedAt: isoDateTimeSchema.optional(),
   paymentReference: nullableText(160).optional().default(null),
   paymentNote: nullableText(500).optional().default(null),
+});
+
+export const recordGroupMatchingDepositRefundRequestSchema = z.object({
+  expectedRevision: revisionSchema,
+  refundedAmountMinor: positiveAmountSchema,
+  refundMethod: groupMatchingDepositPaymentMethodSchema,
+  refundedAt: isoDateTimeSchema.optional(),
+  refundReference: nullableText(160).optional().default(null),
+  refundNote: nullableText(500).optional().default(null),
+});
+
+export const withdrawGroupMatchingEnrollmentRequestSchema = z.object({
+  expectedRevision: revisionSchema,
+  reason: requiredText(500),
 });
 
 export const groupMatchingFormationMemberSchema = z.object({
@@ -355,11 +389,18 @@ export type PublishGroupMatchingCampaignRequest = z.infer<
   typeof publishGroupMatchingCampaignRequestSchema
 >;
 export type GroupMatchingEnrollment = z.infer<typeof groupMatchingEnrollmentSchema>;
+export type GroupMatchingDepositRefund = NonNullable<GroupMatchingEnrollment['depositRefund']>;
 export type AddGroupMatchingEnrollmentRequest = z.input<
   typeof addGroupMatchingEnrollmentRequestSchema
 >;
 export type RecordGroupMatchingDepositRequest = z.input<
   typeof recordGroupMatchingDepositRequestSchema
+>;
+export type RecordGroupMatchingDepositRefundRequest = z.input<
+  typeof recordGroupMatchingDepositRefundRequestSchema
+>;
+export type WithdrawGroupMatchingEnrollmentRequest = z.infer<
+  typeof withdrawGroupMatchingEnrollmentRequestSchema
 >;
 export type GroupMatchingFormationMember = z.infer<typeof groupMatchingFormationMemberSchema>;
 export type GroupMatchingFormation = z.infer<typeof groupMatchingFormationSchema>;

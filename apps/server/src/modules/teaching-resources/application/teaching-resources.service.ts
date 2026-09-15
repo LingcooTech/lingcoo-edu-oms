@@ -9,7 +9,10 @@ import type {
   Classroom,
   ClassroomListQuery,
   Course,
+  CourseSeries,
+  CourseSeriesListQuery,
   CourseListQuery,
+  CreateCourseSeriesRequest,
   CreateCampusRequest,
   CreateClassGroupRequest,
   CreateClassroomRequest,
@@ -28,6 +31,7 @@ import type {
   UpdateClassGroupRequest,
   UpdateClassroomRequest,
   UpdateCourseRequest,
+  UpdateCourseSeriesRequest,
   UpdateScheduleRequest,
   UpdateSessionResourceContextRequest,
   Student360ClassMembership,
@@ -54,6 +58,7 @@ import {
   type ClassMembershipRecord,
   type ClassroomRecord,
   type CourseRecord,
+  type CourseSeriesRecord,
   type ScheduleRecord,
   type ScheduleTeacherRecord,
   type SessionResourceContextRecord,
@@ -176,6 +181,109 @@ export class TeachingResourcesService implements LessonSessionResourceConflictPo
     };
   }
 
+  async listCourseSeries(institutionId: string, input: CourseSeriesListQuery) {
+    const result = await this.repository.listCourseSeries(institutionId, input);
+    return {
+      ...result,
+      items: result.items.map((row) => this.courseSeriesView(row)),
+      page: input.page,
+      pageSize: input.pageSize,
+    };
+  }
+
+  async getCourseSeries(institutionId: string, courseSeriesId: string) {
+    return this.courseSeriesView(
+      await this.requireInstitutionCourseSeries(institutionId, courseSeriesId),
+    );
+  }
+
+  async createCourseSeries(
+    institutionId: string,
+    input: CreateCourseSeriesRequest,
+    context: AuditContext,
+  ) {
+    return this.mutate(
+      'course-series.created',
+      'teaching.course-series',
+      context,
+      async (transaction) => {
+        await this.institutions.assertActiveInstitution(institutionId, transaction);
+        const row = await this.repository.createCourseSeries(institutionId, input, transaction);
+        return { id: row.id, value: this.courseSeriesView(row) };
+      },
+    );
+  }
+
+  async updateCourseSeries(
+    institutionId: string,
+    courseSeriesId: string,
+    input: UpdateCourseSeriesRequest,
+    context: AuditContext,
+  ) {
+    return this.mutate(
+      'course-series.updated',
+      'teaching.course-series',
+      context,
+      async (transaction) => {
+        const before = await this.requireInstitutionCourseSeries(
+          institutionId,
+          courseSeriesId,
+          transaction,
+        );
+        const code = input.code === undefined ? before.code : input.code;
+        const slug = input.slug === undefined ? before.slug : input.slug;
+        if (!code && !slug) {
+          throw new ApiError(422, 'COURSE_SERIES_IDENTIFIER_REQUIRED', '编码和 slug 至少保留一个');
+        }
+        const row = await this.repository.updateCourseSeries(
+          institutionId,
+          courseSeriesId,
+          input,
+          transaction,
+        );
+        if (!row) throw this.versionConflict('课程系列');
+        return { id: row.id, value: this.courseSeriesView(row) };
+      },
+    );
+  }
+
+  async deleteCourseSeries(
+    institutionId: string,
+    courseSeriesId: string,
+    expectedRevision: number,
+    context: AuditContext,
+  ) {
+    return this.mutate(
+      'course-series.deleted',
+      'teaching.course-series',
+      context,
+      async (transaction) => {
+        await this.requireInstitutionCourseSeries(institutionId, courseSeriesId, transaction);
+        const courseCount = await this.repository.countCoursesForSeries(
+          institutionId,
+          courseSeriesId,
+          transaction,
+        );
+        if (courseCount > 0) {
+          throw new ApiError(
+            409,
+            'COURSE_SERIES_IN_USE',
+            '课程系列仍有关联课程，请先解除课程关联或停用系列',
+            { courseCount },
+          );
+        }
+        const deleted = await this.repository.deleteCourseSeries(
+          institutionId,
+          courseSeriesId,
+          expectedRevision,
+          transaction,
+        );
+        if (!deleted) throw this.versionConflict('课程系列');
+        return { id: deleted.id, value: undefined };
+      },
+    );
+  }
+
   async getCourse(institutionId: string, courseId: string, executor?: DatabaseExecutor) {
     return this.courseView(await this.requireInstitutionCourse(institutionId, courseId, executor));
   }
@@ -183,6 +291,12 @@ export class TeachingResourcesService implements LessonSessionResourceConflictPo
   async createCourse(institutionId: string, input: CreateCourseRequest, context: AuditContext) {
     return this.mutate('course.created', 'teaching.course', context, async (transaction) => {
       await this.institutions.assertActiveInstitution(institutionId, transaction);
+      if (input.courseSeriesId)
+        await this.requireActiveInstitutionCourseSeries(
+          institutionId,
+          input.courseSeriesId,
+          transaction,
+        );
       const row = await this.repository.createCourse(institutionId, input, transaction);
       return { id: row.id, value: this.courseView(row) };
     });
@@ -195,7 +309,13 @@ export class TeachingResourcesService implements LessonSessionResourceConflictPo
     context: AuditContext,
   ) {
     return this.mutate('course.updated', 'teaching.course', context, async (transaction) => {
-      await this.requireInstitutionCourse(institutionId, courseId, transaction);
+      const before = await this.requireInstitutionCourse(institutionId, courseId, transaction);
+      if (input.courseSeriesId && input.courseSeriesId !== before.courseSeriesId)
+        await this.requireActiveInstitutionCourseSeries(
+          institutionId,
+          input.courseSeriesId,
+          transaction,
+        );
       const row = await this.repository.updateCourse(institutionId, courseId, input, transaction);
       if (!row) throw this.versionConflict('课程');
       return { id: row.id, value: this.courseView(row) };
@@ -901,6 +1021,28 @@ export class TeachingResourcesService implements LessonSessionResourceConflictPo
     return row;
   }
 
+  private async requireInstitutionCourseSeries(
+    institutionId: string,
+    id: string,
+    executor?: DatabaseExecutor,
+  ) {
+    const row = await this.repository.findCourseSeries(id, executor);
+    if (!row || row.institutionId !== institutionId)
+      throw this.notFound('COURSE_SERIES_NOT_FOUND', '课程系列不存在或不属于当前机构');
+    return row;
+  }
+
+  private async requireActiveInstitutionCourseSeries(
+    institutionId: string,
+    id: string,
+    executor?: DatabaseExecutor,
+  ) {
+    const row = await this.requireInstitutionCourseSeries(institutionId, id, executor);
+    if (row.status !== 'active')
+      throw new ApiError(409, 'COURSE_SERIES_INACTIVE', '课程系列已停用');
+    return row;
+  }
+
   private async requireInstitutionClass(
     institutionId: string,
     id: string,
@@ -973,6 +1115,14 @@ export class TeachingResourcesService implements LessonSessionResourceConflictPo
   }
 
   private courseView(row: CourseRecord): Course {
+    return {
+      ...row,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
+  private courseSeriesView(row: CourseSeriesRecord): CourseSeries {
     return {
       ...row,
       createdAt: row.createdAt.toISOString(),

@@ -13,6 +13,7 @@ const sessionId = '77777777-7777-4777-8777-777777777777';
 const teacherId = '88888888-8888-4888-8888-888888888888';
 const studentId = '99999999-9999-4999-8999-999999999999';
 const now = '2026-09-08T10:00:00+08:00';
+const courseSeriesId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 const campus = {
   id: campusId,
@@ -121,6 +122,46 @@ function bodyAt(fetch: ReturnType<typeof vi.fn>, index: number) {
 }
 
 describe('P6 teaching resources api client', () => {
+  it('manages institution course series and associates courses optionally', async () => {
+    const series = {
+      id: courseSeriesId,
+      institutionId,
+      name: '硬笔书法',
+      code: 'HP',
+      slug: 'hard-pen',
+      description: null,
+      status: 'active',
+      sortOrder: 0,
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(response({ items: [series], page: 1, pageSize: 20, total: 1 }))
+      .mockResolvedValueOnce(response(series, 201))
+      .mockResolvedValueOnce(response({ ...series, name: '书法系列', revision: 2 }))
+      .mockResolvedValueOnce(response({ accepted: true }));
+    const api = createTeachingResourcesApi(createApiClient({ fetch }));
+
+    await api.listCourseSeries(institutionId);
+    await api.createCourseSeries(institutionId, { name: '硬笔书法', code: 'HP' });
+    await api.updateCourseSeries(institutionId, courseSeriesId, {
+      expectedRevision: 1,
+      name: '书法系列',
+    });
+    await api.deleteCourseSeries(institutionId, courseSeriesId, { expectedRevision: 2 });
+
+    expect(fetch.mock.calls.map((call) => call[0])).toEqual([
+      `/api/institutions/${institutionId}/course-series?page=1&pageSize=20`,
+      `/api/institutions/${institutionId}/course-series`,
+      `/api/institutions/${institutionId}/course-series/${courseSeriesId}`,
+      `/api/institutions/${institutionId}/course-series/${courseSeriesId}`,
+    ]);
+    expect(bodyAt(fetch, 1)).toMatchObject({ name: '硬笔书法', code: 'HP' });
+    expect(fetch.mock.calls[3]?.[1]?.method).toBe('DELETE');
+  });
+
   it('covers organization, campus and institution resource endpoints', async () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()

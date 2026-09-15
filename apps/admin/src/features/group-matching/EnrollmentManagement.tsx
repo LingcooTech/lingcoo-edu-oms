@@ -36,6 +36,8 @@ interface EnrollmentTableProps {
   detail: GroupMatchingCampaignDetail;
   canManage: boolean;
   onRecordDeposit: (enrollment: GroupMatchingEnrollment) => void;
+  onRefundDeposit: (enrollment: GroupMatchingEnrollment) => void;
+  onWithdraw: (enrollment: GroupMatchingEnrollment) => void;
 }
 
 export function EnrollmentTable({
@@ -43,6 +45,8 @@ export function EnrollmentTable({
   detail,
   canManage,
   onRecordDeposit,
+  onRefundDeposit,
+  onWithdraw,
 }: EnrollmentTableProps) {
   const columns: TableColumnsType<GroupMatchingEnrollment> = [
     {
@@ -69,9 +73,13 @@ export function EnrollmentTable({
         <Space orientation="vertical" size={0}>
           <span>{money(item.depositAmountMinor)}</span>
           <Typography.Text type="secondary">
-            {item.depositPaidAt
-              ? `${item.depositPaymentMethod || '—'} · ${dateTime(item.depositPaidAt)}`
-              : '未登记'}
+            {item.depositRefund
+              ? `已退 ${money(item.depositRefund.amountMinor)} · ${dateTime(item.depositRefund.refundedAt)}`
+              : item.depositAmountMinor === 0
+                ? '无需意向金'
+                : item.depositPaidAt
+                  ? `${item.depositPaymentMethod || '—'} · ${dateTime(item.depositPaidAt)}`
+                  : '未登记'}
           </Typography.Text>
         </Space>
       ),
@@ -79,15 +87,41 @@ export function EnrollmentTable({
     { title: '备注', dataIndex: 'notes', render: (value) => value || '—' },
     {
       title: '操作',
-      width: 120,
-      render: (_, item) =>
-        canManage && item.status === 'pending_deposit' && campaign.depositAmountMinor > 0 ? (
-          <Button type="link" icon={<WalletOutlined />} onClick={() => onRecordDeposit(item)}>
-            登记意向金
-          </Button>
-        ) : (
-          '—'
-        ),
+      width: 210,
+      render: (_, item) => {
+        if (!canManage || ['selected', 'withdrawn'].includes(item.status)) return '—';
+        if (item.status === 'pending_deposit' && campaign.depositAmountMinor > 0) {
+          return (
+            <Space size={0}>
+              <Button type="link" icon={<WalletOutlined />} onClick={() => onRecordDeposit(item)}>
+                登记意向金
+              </Button>
+              <Button type="link" danger onClick={() => onWithdraw(item)}>
+                退出
+              </Button>
+            </Space>
+          );
+        }
+        if (item.status === 'deposit_paid' && item.depositAmountMinor > 0) {
+          return (
+            <Button type="link" danger onClick={() => onRefundDeposit(item)}>
+              登记退款
+            </Button>
+          );
+        }
+        if (
+          item.status === 'deposit_refunded' ||
+          item.status === 'waitlisted' ||
+          (item.status === 'deposit_paid' && item.depositAmountMinor === 0)
+        ) {
+          return (
+            <Button type="link" danger onClick={() => onWithdraw(item)}>
+              办理退出
+            </Button>
+          );
+        }
+        return '—';
+      },
     },
   ];
 
@@ -98,7 +132,7 @@ export function EnrollmentTable({
       columns={columns}
       dataSource={detail.enrollments.items}
       pagination={false}
-      scroll={{ x: 860 }}
+      scroll={{ x: 1_000 }}
       locale={{ emptyText: '尚无报名学员' }}
     />
   );

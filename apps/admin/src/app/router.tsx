@@ -118,6 +118,11 @@ const TeachingResourcesPage = lazy(() =>
     default: module.TeachingResourcesPage,
   })),
 );
+const CourseSeriesPage = lazy(() =>
+  import('../features/teaching-resources/CourseSeriesPage').then((module) => ({
+    default: module.CourseSeriesPage,
+  })),
+);
 const SchedulePlansPage = lazy(() =>
   import('../features/teaching-resources/SchedulePlansPage').then((module) => ({
     default: module.SchedulePlansPage,
@@ -220,6 +225,7 @@ export function AppRouter() {
               <Route path="teaching-resources" element={<Navigate to="/courses" replace />} />
             </Route>
             <Route element={<RequirePermission permissions={['education.courses.read']} />}>
+              <Route path="course-series" element={<CourseSeriesPage />} />
               <Route path="courses" element={<TeachingResourcesPage initialTab="courses" />} />
             </Route>
             <Route element={<RequirePermission permissions={['education.classes.read']} />}>

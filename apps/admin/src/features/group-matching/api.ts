@@ -11,6 +11,8 @@ import type {
   GroupMatchingFormation,
   GroupMatchingPriceTier,
   RecordGroupMatchingDepositRequest,
+  RecordGroupMatchingDepositRefundRequest,
+  WithdrawGroupMatchingEnrollmentRequest,
 } from '@lingcoo-edu-oms/contracts';
 
 import { appApiClient } from '../identity/api';
@@ -29,4 +31,6 @@ export type {
   GroupMatchingFormation,
   GroupMatchingPriceTier,
   RecordGroupMatchingDepositRequest,
+  RecordGroupMatchingDepositRefundRequest,
+  WithdrawGroupMatchingEnrollmentRequest,
 };

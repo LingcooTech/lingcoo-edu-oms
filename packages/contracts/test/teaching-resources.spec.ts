@@ -5,6 +5,10 @@ import {
   classGroupSchema,
   classMembershipListQuerySchema,
   classMembershipSchema,
+  courseSchema,
+  courseSeriesSchema,
+  createCourseRequestSchema,
+  createCourseSeriesRequestSchema,
   createCampusRequestSchema,
   createScheduleRequestSchema,
   generateScheduleRequestSchema,
@@ -85,6 +89,54 @@ describe('P6 teaching resource contracts', () => {
         studentIds: [courseId, courseId],
       }).success,
     ).toBe(false);
+  });
+
+  it('keeps course series as optional catalog taxonomy without constraining course delivery', () => {
+    const seriesId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    expect(
+      createCourseSeriesRequestSchema.parse({ name: '硬笔书法', slug: 'hard-pen' }),
+    ).toMatchObject({ status: 'active', sortOrder: 0 });
+    expect(createCourseSeriesRequestSchema.safeParse({ name: '无标识系列' }).success).toBe(false);
+    expect(
+      courseSeriesSchema.safeParse({
+        id: seriesId,
+        institutionId,
+        name: '硬笔书法',
+        code: 'HP',
+        slug: 'hard-pen',
+        description: null,
+        status: 'active',
+        sortOrder: 0,
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      }).success,
+    ).toBe(true);
+    expect(
+      createCourseRequestSchema.parse({
+        name: '硬笔基础',
+        durationMinutes: 60,
+        courseSeriesId: seriesId,
+      }).courseSeriesId,
+    ).toBe(seriesId);
+    expect(
+      courseSchema.parse({
+        id: courseId,
+        institutionId,
+        courseSeriesId: null,
+        code: null,
+        name: '独立课程',
+        category: null,
+        ageRange: null,
+        durationMinutes: 60,
+        summary: null,
+        status: 'active',
+        sortOrder: 0,
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      }).courseSeriesId,
+    ).toBeNull();
   });
 
   it('validates schedule dates, weekdays, time, IANA timezone and independent defaults', () => {

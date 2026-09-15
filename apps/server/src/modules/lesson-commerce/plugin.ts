@@ -17,6 +17,7 @@ import type {
   LessonCommercePeopleDirectory,
   LessonCommercePayments,
   WechatMiniPayerDirectory,
+  LessonCommerceNotifications,
 } from './domain/model.js';
 import { LessonCommerceRepository } from './infrastructure/persistence/lesson-commerce.repository.js';
 
@@ -33,6 +34,7 @@ export interface LessonCommerceDependencies {
   idempotency: IdempotencyService;
   audit: AuditWriter;
   settings: SettingsReader;
+  notifications?: LessonCommerceNotifications;
   service?: LessonCommerceService;
 }
 
@@ -54,6 +56,7 @@ export function createLessonCommerceService(dependencies: LessonCommerceDependen
       dependencies.audit,
       dependencies.settings,
       undefined,
+      dependencies.notifications,
     )
   );
 }
